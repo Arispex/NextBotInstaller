@@ -487,24 +487,7 @@ internal static class Program
         {
             case "修改现有配置":
             {
-                var currentValues = ParseEnvValues(envPath);
-                currentValues.TryGetValue("OWNER_ID", out var existingOwnerIds);
-                currentValues.TryGetValue("GROUP_ID", out var existingGroupIds);
-                currentValues.TryGetValue("RENDER_SERVER_PUBLIC_BASE_URL", out var existingPublicBaseUrl);
-
-                var ownerDefaults = ParseEnvArray(existingOwnerIds);
-                var groupDefaults = ParseEnvArray(existingGroupIds);
-                var ipDefault = ParsePublicIpFromUrl(existingPublicBaseUrl);
-
-                var inputs = PromptConfigInputs(ownerDefaults, groupDefaults, ipDefault);
-                UpdateEnvValues(envPath, new Dictionary<string, string>
-                {
-                    ["OWNER_ID"] = ToEnvArrayLiteral(inputs.OwnerIds),
-                    ["GROUP_ID"] = ToEnvArrayLiteral(inputs.GroupIds),
-                    ["RENDER_SERVER_PUBLIC_BASE_URL"] = $"http://{inputs.PublicIp}:18081"
-                });
-
-                AnsiConsole.MarkupLine("[green].env 配置已更新。[/]");
+                RunDetailedConfigEditor(envPath);
                 break;
             }
             case "覆盖重建 .env":
@@ -518,6 +501,211 @@ internal static class Program
                 AnsiConsole.MarkupLine("[yellow]已取消。[/]");
                 break;
         }
+    }
+
+    private static void RunDetailedConfigEditor(string envPath)
+    {
+        var config = LoadEditableConfig(envPath);
+
+        while (true)
+        {
+            ShowCurrentConfig(config);
+            var selected = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("[bold]请选择要修改的配置项[/]")
+                    .AddChoices(
+                        "ONEBOT_WS_URLS",
+                        "ONEBOT_ACCESS_TOKEN",
+                        "OWNER_ID",
+                        "GROUP_ID",
+                        "RENDER_SERVER_HOST",
+                        "RENDER_SERVER_PORT",
+                        "RENDER_SERVER_PUBLIC_BASE_URL",
+                        "保存并返回",
+                        "放弃并返回"));
+
+            switch (selected)
+            {
+                case "ONEBOT_WS_URLS":
+                {
+                    var wsRaw = AnsiConsole.Prompt(
+                        new TextPrompt<string>("请输入 ONEBOT_WS_URLS（多个用英文逗号分隔）")
+                            .AllowEmpty()
+                            .DefaultValue(ToCommaSeparated(config.OnebotWsUrls))
+                            .ShowDefaultValue(true));
+                    config.OnebotWsUrls = ParseCommaSeparatedValues(wsRaw).ToList();
+                    break;
+                }
+                case "ONEBOT_ACCESS_TOKEN":
+                {
+                    var token = AnsiConsole.Prompt(
+                        new TextPrompt<string>("请输入 ONEBOT_ACCESS_TOKEN")
+                            .AllowEmpty()
+                            .DefaultValue(config.OnebotAccessToken)
+                            .ShowDefaultValue(true));
+                    config.OnebotAccessToken = token.Trim();
+                    break;
+                }
+                case "OWNER_ID":
+                {
+                    var ownerRaw = AnsiConsole.Prompt(
+                        new TextPrompt<string>("请输入 OWNER_ID（多个用英文逗号分隔）")
+                            .AllowEmpty()
+                            .DefaultValue(ToCommaSeparated(config.OwnerIds))
+                            .ShowDefaultValue(true));
+                    config.OwnerIds = ParseCommaSeparatedValues(ownerRaw).ToList();
+                    break;
+                }
+                case "GROUP_ID":
+                {
+                    var groupRaw = AnsiConsole.Prompt(
+                        new TextPrompt<string>("请输入 GROUP_ID（多个用英文逗号分隔）")
+                            .AllowEmpty()
+                            .DefaultValue(ToCommaSeparated(config.GroupIds))
+                            .ShowDefaultValue(true));
+                    config.GroupIds = ParseCommaSeparatedValues(groupRaw).ToList();
+                    break;
+                }
+                case "RENDER_SERVER_HOST":
+                {
+                    var host = AnsiConsole.Prompt(
+                        new TextPrompt<string>("请输入 RENDER_SERVER_HOST")
+                            .Validate(value => !string.IsNullOrWhiteSpace(value)
+                                ? ValidationResult.Success()
+                                : ValidationResult.Error("[red]RENDER_SERVER_HOST 不能为空[/]"))
+                            .DefaultValue(config.RenderServerHost)
+                            .ShowDefaultValue(true));
+                    config.RenderServerHost = host.Trim();
+                    break;
+                }
+                case "RENDER_SERVER_PORT":
+                {
+                    var port = AnsiConsole.Prompt(
+                        new TextPrompt<int>("请输入 RENDER_SERVER_PORT")
+                            .Validate(value => value is > 0 and <= 65535
+                                ? ValidationResult.Success()
+                                : ValidationResult.Error("[red]端口范围必须是 1-65535[/]"))
+                            .DefaultValue(config.RenderServerPort)
+                            .ShowDefaultValue(true));
+                    config.RenderServerPort = port;
+                    break;
+                }
+                case "RENDER_SERVER_PUBLIC_BASE_URL":
+                {
+                    var urlRaw = AnsiConsole.Prompt(
+                        new TextPrompt<string>("请输入 RENDER_SERVER_PUBLIC_BASE_URL（可直接输入 IP）")
+                            .Validate(value => !string.IsNullOrWhiteSpace(value)
+                                ? ValidationResult.Success()
+                                : ValidationResult.Error("[red]RENDER_SERVER_PUBLIC_BASE_URL 不能为空[/]"))
+                            .DefaultValue(config.RenderServerPublicBaseUrl)
+                            .ShowDefaultValue(true));
+                    config.RenderServerPublicBaseUrl = NormalizePublicBaseUrl(urlRaw, config.RenderServerPort);
+                    break;
+                }
+                case "保存并返回":
+                {
+                    UpdateEnvValues(envPath, new Dictionary<string, string>
+                    {
+                        ["ONEBOT_WS_URLS"] = ToEnvArrayLiteral(config.OnebotWsUrls),
+                        ["ONEBOT_ACCESS_TOKEN"] = config.OnebotAccessToken,
+                        ["OWNER_ID"] = ToEnvArrayLiteral(config.OwnerIds),
+                        ["GROUP_ID"] = ToEnvArrayLiteral(config.GroupIds),
+                        ["RENDER_SERVER_HOST"] = config.RenderServerHost,
+                        ["RENDER_SERVER_PORT"] = config.RenderServerPort.ToString(),
+                        ["RENDER_SERVER_PUBLIC_BASE_URL"] = config.RenderServerPublicBaseUrl
+                    });
+
+                    AnsiConsole.MarkupLine("[green].env 配置已更新。[/]");
+                    return;
+                }
+                case "放弃并返回":
+                    AnsiConsole.MarkupLine("[yellow]已放弃当前修改。[/]");
+                    return;
+            }
+
+            AnsiConsole.WriteLine();
+        }
+    }
+
+    private static void ShowCurrentConfig(EditableConfig config)
+    {
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("配置项")
+            .AddColumn("当前值");
+
+        table.AddRow("ONEBOT_WS_URLS", Markup.Escape(ToEnvArrayLiteral(config.OnebotWsUrls)));
+        table.AddRow("ONEBOT_ACCESS_TOKEN", Markup.Escape(config.OnebotAccessToken));
+        table.AddRow("OWNER_ID", Markup.Escape(ToEnvArrayLiteral(config.OwnerIds)));
+        table.AddRow("GROUP_ID", Markup.Escape(ToEnvArrayLiteral(config.GroupIds)));
+        table.AddRow("RENDER_SERVER_HOST", Markup.Escape(config.RenderServerHost));
+        table.AddRow("RENDER_SERVER_PORT", config.RenderServerPort.ToString());
+        table.AddRow("RENDER_SERVER_PUBLIC_BASE_URL", Markup.Escape(config.RenderServerPublicBaseUrl));
+
+        AnsiConsole.Write(new Panel(table).Header("[bold cyan]当前配置[/]").Expand());
+    }
+
+    private static EditableConfig LoadEditableConfig(string envPath)
+    {
+        var values = ParseEnvValues(envPath);
+
+        var onebotWsUrls = ParseEnvArray(GetEnvValue(values, "ONEBOT_WS_URLS"));
+        var ownerIds = ParseEnvArray(GetEnvValue(values, "OWNER_ID"));
+        var groupIds = ParseEnvArray(GetEnvValue(values, "GROUP_ID"));
+
+        var host = GetEnvValue(values, "RENDER_SERVER_HOST");
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            host = "0.0.0.0";
+        }
+
+        var port = ParsePortOrDefault(GetEnvValue(values, "RENDER_SERVER_PORT"), 18081);
+
+        var publicBaseUrl = GetEnvValue(values, "RENDER_SERVER_PUBLIC_BASE_URL");
+        if (string.IsNullOrWhiteSpace(publicBaseUrl))
+        {
+            publicBaseUrl = $"http://127.0.0.1:{port}";
+        }
+
+        return new EditableConfig(
+            onebotWsUrls.Count > 0 ? onebotWsUrls.ToList() : new List<string> { "ws://127.0.0.1:3001" },
+            GetEnvValue(values, "ONEBOT_ACCESS_TOKEN") ?? "S~VPgQf9t0bhvf_u",
+            ownerIds.ToList(),
+            groupIds.ToList(),
+            host,
+            port,
+            publicBaseUrl);
+    }
+
+    private static string? GetEnvValue(IReadOnlyDictionary<string, string> values, string key)
+    {
+        return values.TryGetValue(key, out var value) ? value : null;
+    }
+
+    private static int ParsePortOrDefault(string? value, int fallback)
+    {
+        return int.TryParse(value, out var parsed) && parsed is > 0 and <= 65535
+            ? parsed
+            : fallback;
+    }
+
+    private static string NormalizePublicBaseUrl(string rawInput, int defaultPort)
+    {
+        var trimmed = rawInput.Trim();
+
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absoluteUri))
+        {
+            return absoluteUri.ToString().TrimEnd('/');
+        }
+
+        if (Uri.TryCreate($"http://{trimmed}", UriKind.Absolute, out var withSchemeUri))
+        {
+            var host = withSchemeUri.Host;
+            var port = withSchemeUri.IsDefaultPort ? defaultPort : withSchemeUri.Port;
+            return $"http://{host}:{port}";
+        }
+
+        return trimmed;
     }
 
     private static ConfigInputs PromptConfigInputs(
@@ -766,6 +954,35 @@ internal static class Program
         [property: JsonPropertyName("tag")] string Tag,
         [property: JsonPropertyName("asset_url_prefix")]
         string AssetUrlPrefix);
+
+    private sealed class EditableConfig
+    {
+        public EditableConfig(
+            List<string> onebotWsUrls,
+            string onebotAccessToken,
+            List<string> ownerIds,
+            List<string> groupIds,
+            string renderServerHost,
+            int renderServerPort,
+            string renderServerPublicBaseUrl)
+        {
+            OnebotWsUrls = onebotWsUrls;
+            OnebotAccessToken = onebotAccessToken;
+            OwnerIds = ownerIds;
+            GroupIds = groupIds;
+            RenderServerHost = renderServerHost;
+            RenderServerPort = renderServerPort;
+            RenderServerPublicBaseUrl = renderServerPublicBaseUrl;
+        }
+
+        public List<string> OnebotWsUrls { get; set; }
+        public string OnebotAccessToken { get; set; }
+        public List<string> OwnerIds { get; set; }
+        public List<string> GroupIds { get; set; }
+        public string RenderServerHost { get; set; }
+        public int RenderServerPort { get; set; }
+        public string RenderServerPublicBaseUrl { get; set; }
+    }
 
     private sealed record ConfigInputs(
         IReadOnlyList<string> OwnerIds,
