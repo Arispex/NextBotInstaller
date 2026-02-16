@@ -544,7 +544,7 @@ internal static class Program
                 $"set \"PATH=%~dp0{relativePythonDirectory};%~dp0{relativeScriptsDirectory};%PATH%\"\r\n" +
                 "uv run python bot.py\r\n";
 
-            File.WriteAllText(scriptPath, script, Encoding.UTF8);
+            File.WriteAllText(scriptPath, script, new UTF8Encoding(false));
             return scriptPath;
         }
 
@@ -557,7 +557,7 @@ internal static class Program
             $"export PATH=\"$PWD/{relativePythonDirectory}:$PATH\"\n" +
             "uv run python bot.py\n";
 
-        File.WriteAllText(unixScriptPath, unixScript, Encoding.UTF8);
+        File.WriteAllText(unixScriptPath, unixScript, new UTF8Encoding(false));
         File.SetUnixFileMode(unixScriptPath,
             UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
             UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
