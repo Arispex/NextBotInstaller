@@ -52,10 +52,10 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
-      - name: Publish (framework-dependent)
+      - name: Publish (Native AOT)
         shell: pwsh
         run: |
-          dotnet publish ./NextBotInstaller/NextBotInstaller.csproj -c Release -r ${{ matrix.rid }} --self-contained false -p:UseAppHost=true -o ./out/${{ matrix.rid }}/publish
+          dotnet publish ./NextBotInstaller/NextBotInstaller.csproj -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishAot=true -p:StripSymbols=true -o ./out/${{ matrix.rid }}/publish
 
       - name: Package zip (NextBot/NextBotInstaller)
         shell: pwsh
