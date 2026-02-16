@@ -71,6 +71,7 @@ jobs:
           $packageRoot = Join-Path $PWD "out/$rid/package/NextBot/NextBotInstaller"
           New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
           Copy-Item -Path (Join-Path $publishDir "*") -Destination $packageRoot -Recurse -Force
+          Get-ChildItem -Path $packageRoot -Filter "*.pdb" -Recurse | Remove-Item -Force
 
           $zipPath = Join-Path $PWD "out/$rid/NextBotInstaller-$rid.zip"
           if (Test-Path $zipPath) {
