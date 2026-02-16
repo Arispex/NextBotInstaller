@@ -40,11 +40,11 @@ internal static class Program
                     .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
                     .PageSize(10)
                     .MoreChoicesText("[grey](上下方向键选择，回车确认)[/]")
-                    .AddChoices("1. 一键安装", "2. 配置管理", "3. 代理站管理", "0. 退出"));
+                    .AddChoices("1. 安装 NextBot", "2. NextBot 配置管理", "3. 代理站管理", "0. 退出"));
 
             switch (selected)
             {
-                case "1. 一键安装":
+                case "1. 安装 NextBot":
                     try
                     {
                         await RunOneClickInstallAsync();
@@ -55,7 +55,7 @@ internal static class Program
                     }
 
                     break;
-                case "2. 配置管理":
+                case "2. NextBot 配置管理":
                     try
                     {
                         RunConfigFileWizard();
@@ -79,7 +79,7 @@ internal static class Program
 
     private static async Task RunOneClickInstallAsync()
     {
-        ShowSectionTitle("一键安装", "自动下载 NextBot、安装环境并生成启动脚本");
+        ShowSectionTitle("安装 NextBot", "下载项目源码、安装 Python 与依赖，并生成启动脚本");
         AnsiConsole.MarkupLine($"[grey]GitHub 代理：[/][white]{Markup.Escape(GetGithubProxyStatusText())}[/]");
         AnsiConsole.WriteLine();
 
@@ -825,7 +825,7 @@ internal static class Program
 
     private static void RunConfigFileWizard()
     {
-        ShowSectionTitle("配置管理", "创建、查看并按菜单逐项编辑 .env 配置");
+        ShowSectionTitle("NextBot 配置管理", "创建、查看并按菜单逐项编辑 .env 配置");
 
         var workingDirectory = Directory.GetCurrentDirectory();
         var envPath = Path.Combine(workingDirectory, ".env");
