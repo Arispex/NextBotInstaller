@@ -1138,41 +1138,6 @@ internal static class Program
         return trimmed;
     }
 
-    private static ConfigInputs PromptConfigInputs(
-        IReadOnlyList<string>? ownerDefaults,
-        IReadOnlyList<string>? groupDefaults,
-        string? publicIpDefault)
-    {
-        var ownerDefaultText = ToCommaSeparated(ownerDefaults);
-        var groupDefaultText = ToCommaSeparated(groupDefaults);
-        var ipDefaultText = string.IsNullOrWhiteSpace(publicIpDefault) ? "127.0.0.1" : publicIpDefault;
-
-        var ownerRaw = AnsiConsole.Prompt(
-            new TextPrompt<string>("请输入机器人所有者的 QQ 号（多个用英文逗号分隔）")
-                .AllowEmpty()
-                .DefaultValue(ownerDefaultText)
-                .ShowDefaultValue(true));
-
-        var groupRaw = AnsiConsole.Prompt(
-            new TextPrompt<string>("请输入监听的 QQ 群号（多个用英文逗号分隔）")
-                .AllowEmpty()
-                .DefaultValue(groupDefaultText)
-                .ShowDefaultValue(true));
-
-        var publicIpRaw = AnsiConsole.Prompt(
-            new TextPrompt<string>("请输入公网 IP")
-                .Validate(ip => !string.IsNullOrWhiteSpace(ip)
-                    ? ValidationResult.Success()
-                    : ValidationResult.Error("[red]公网 IP 不能为空[/]"))
-                .DefaultValue(ipDefaultText)
-                .ShowDefaultValue(true));
-
-        return new ConfigInputs(
-            ParseCommaSeparatedValues(ownerRaw),
-            ParseCommaSeparatedValues(groupRaw),
-            NormalizePublicIp(publicIpRaw));
-    }
-
     private static void WriteFullEnvFile(string envPath, ConfigInputs inputs)
     {
         var content = BuildEnvTemplate(inputs);
@@ -1421,39 +1386,6 @@ internal static class Program
         }
 
         return bool.TryParse(value.Trim(), out var parsed) ? parsed : fallback;
-    }
-
-    private static string ParsePublicIpFromUrl(string? url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return string.Empty;
-        }
-
-        if (Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host))
-        {
-            return uri.Host;
-        }
-
-        return string.Empty;
-    }
-
-    private static string NormalizePublicIp(string rawInput)
-    {
-        var trimmed = rawInput.Trim();
-        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absoluteUri) &&
-            !string.IsNullOrWhiteSpace(absoluteUri.Host))
-        {
-            return absoluteUri.Host;
-        }
-
-        if (Uri.TryCreate($"http://{trimmed}", UriKind.Absolute, out var withSchemeUri) &&
-            !string.IsNullOrWhiteSpace(withSchemeUri.Host))
-        {
-            return withSchemeUri.Host;
-        }
-
-        return trimmed;
     }
 
     private static string ToCommaSeparated(IReadOnlyList<string>? values)
