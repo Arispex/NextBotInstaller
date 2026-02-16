@@ -718,19 +718,19 @@ internal static class Program
         var ipDefaultText = string.IsNullOrWhiteSpace(publicIpDefault) ? "127.0.0.1" : publicIpDefault;
 
         var ownerRaw = AnsiConsole.Prompt(
-            new TextPrompt<string>("请输入 OWNER_ID（多个用英文逗号分隔）")
+            new TextPrompt<string>("请输入机器人所有者的 QQ 号（多个用英文逗号分隔）")
                 .AllowEmpty()
                 .DefaultValue(ownerDefaultText)
                 .ShowDefaultValue(true));
 
         var groupRaw = AnsiConsole.Prompt(
-            new TextPrompt<string>("请输入 GROUP_ID（多个用英文逗号分隔）")
+            new TextPrompt<string>("请输入监听的 QQ 群号（多个用英文逗号分隔）")
                 .AllowEmpty()
                 .DefaultValue(groupDefaultText)
                 .ShowDefaultValue(true));
 
         var publicIpRaw = AnsiConsole.Prompt(
-            new TextPrompt<string>("请输入公网 IP（用于 RENDER_SERVER_PUBLIC_BASE_URL）")
+            new TextPrompt<string>("请输入公网 IP")
                 .Validate(ip => !string.IsNullOrWhiteSpace(ip)
                     ? ValidationResult.Success()
                     : ValidationResult.Error("[red]公网 IP 不能为空[/]"))
@@ -763,7 +763,7 @@ internal static class Program
             "COMMAND_START=[\"/\", \"\"]",
             string.Empty,
             "ONEBOT_WS_URLS=[\"ws://127.0.0.1:3001\"]",
-            "ONEBOT_ACCESS_TOKEN=S~VPgQf9t0bhvf_u",
+            "ONEBOT_ACCESS_TOKEN=Cd2K71HE7SWr2vT",
             string.Empty,
             $"OWNER_ID={ownerLiteral}",
             $"GROUP_ID={groupLiteral}",
