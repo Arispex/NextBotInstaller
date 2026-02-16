@@ -12,9 +12,11 @@ using Spectre.Console;
 internal static class Program
 {
     private const string PythonVersion = "3.14.3";
+    private const string DefaultGithubProxyBaseUrl = "https://gh-proxy.org/";
     private const string LatestReleaseMetadataUrl =
         "https://raw.githubusercontent.com/astral-sh/python-build-standalone/latest-release/latest-release.json";
 
+    private static readonly GithubProxySettings GithubProxy = ResolveGithubProxySettings();
     private static readonly HttpClient Http = CreateHttpClient();
 
     private static async Task Main()
@@ -67,6 +69,8 @@ internal static class Program
     private static async Task RunOneClickInstallAsync()
     {
         ShowSectionTitle("一键安装", "自动下载 Python、安装依赖并生成启动脚本");
+        AnsiConsole.MarkupLine($"[grey]GitHub 代理：[/][white]{Markup.Escape(GetGithubProxyStatusText())}[/]");
+        AnsiConsole.WriteLine();
 
         var workingDirectory = Directory.GetCurrentDirectory();
         var cacheDirectory = Path.Combine(workingDirectory, ".installer-cache");
@@ -165,6 +169,7 @@ internal static class Program
             .AddColumn("[bold #7dd3fc]值[/]");
         infoTable.AddRow("系统", Markup.Escape(GetCurrentOsName()));
         infoTable.AddRow("架构", RuntimeInformation.ProcessArchitecture.ToString());
+        infoTable.AddRow("GitHub 代理", Markup.Escape(GetGithubProxyStatusText()));
         infoTable.AddRow("运行目录", Markup.Escape(Directory.GetCurrentDirectory()));
 
         AnsiConsole.Write(
@@ -227,6 +232,113 @@ internal static class Program
         return RuntimeInformation.OSDescription;
     }
 
+    private static string ToProxiedGithubUrl(string url)
+    {
+        if (!GithubProxy.Enabled || string.IsNullOrWhiteSpace(GithubProxy.BaseUrl))
+        {
+            return url;
+        }
+
+        if (url.StartsWith(GithubProxy.BaseUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            return url;
+        }
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return url;
+        }
+
+        if (!IsGithubHost(uri.Host))
+        {
+            return url;
+        }
+
+        return $"{GithubProxy.BaseUrl}{url}";
+    }
+
+    private static bool IsGithubHost(string host)
+    {
+        var normalized = host.ToLowerInvariant();
+        return normalized == "github.com" ||
+               normalized.EndsWith(".github.com", StringComparison.Ordinal) ||
+               normalized == "githubusercontent.com" ||
+               normalized.EndsWith(".githubusercontent.com", StringComparison.Ordinal);
+    }
+
+    private static GithubProxySettings ResolveGithubProxySettings()
+    {
+        var candidates = new[]
+        {
+            ("NEXTBOT_GITHUB_PROXY", Environment.GetEnvironmentVariable("NEXTBOT_GITHUB_PROXY")),
+            ("GITHUB_PROXY", Environment.GetEnvironmentVariable("GITHUB_PROXY"))
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (string.IsNullOrWhiteSpace(candidate.Item2))
+            {
+                continue;
+            }
+
+            var configuredValue = candidate.Item2.Trim();
+            if (IsProxyDisabledValue(configuredValue))
+            {
+                return new GithubProxySettings(false, string.Empty, $"环境变量 {candidate.Item1}");
+            }
+
+            if (TryNormalizeProxyBaseUrl(configuredValue, out var normalizedProxy))
+            {
+                return new GithubProxySettings(true, normalizedProxy, $"环境变量 {candidate.Item1}");
+            }
+        }
+
+        return new GithubProxySettings(true, DefaultGithubProxyBaseUrl, "默认");
+    }
+
+    private static bool TryNormalizeProxyBaseUrl(string raw, out string normalized)
+    {
+        var candidate = raw.Trim();
+        if (!candidate.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !candidate.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            candidate = $"https://{candidate}";
+        }
+
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri))
+        {
+            normalized = string.Empty;
+            return false;
+        }
+
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = string.Empty;
+            return false;
+        }
+
+        var rebuilt = uri.ToString();
+        normalized = rebuilt.EndsWith('/') ? rebuilt : $"{rebuilt}/";
+        return true;
+    }
+
+    private static bool IsProxyDisabledValue(string value)
+    {
+        var normalized = value.Trim().ToLowerInvariant();
+        return normalized is "0" or "off" or "false" or "disable" or "disabled" or "none";
+    }
+
+    private static string GetGithubProxyStatusText()
+    {
+        if (!GithubProxy.Enabled)
+        {
+            return $"已禁用（{GithubProxy.Source}）";
+        }
+
+        return $"{GithubProxy.BaseUrl}（{GithubProxy.Source}）";
+    }
+
     private static async Task<ArchivePlan> ResolveArchivePlanAsync(string pythonVersion)
     {
         var customArchiveUrl = Environment.GetEnvironmentVariable("NEXTBOT_PYTHON_ARCHIVE_URL");
@@ -236,7 +348,7 @@ internal static class Program
             return new ArchivePlan(customArchiveUrl, customFileName);
         }
 
-        var releaseJson = await Http.GetStringAsync(LatestReleaseMetadataUrl);
+        var releaseJson = await Http.GetStringAsync(ToProxiedGithubUrl(LatestReleaseMetadataUrl));
         var metadata = JsonSerializer.Deserialize<LatestReleaseMetadata>(releaseJson,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
@@ -321,9 +433,11 @@ internal static class Program
 
     private static async Task<bool> UrlExistsAsync(string url)
     {
+        var requestUrl = ToProxiedGithubUrl(url);
+
         try
         {
-            using var headRequest = new HttpRequestMessage(HttpMethod.Head, url);
+            using var headRequest = new HttpRequestMessage(HttpMethod.Head, requestUrl);
             using var headResponse = await Http.SendAsync(headRequest, HttpCompletionOption.ResponseHeadersRead);
             if (headResponse.IsSuccessStatusCode)
             {
@@ -342,7 +456,7 @@ internal static class Program
 
         try
         {
-            using var getRequest = new HttpRequestMessage(HttpMethod.Get, url);
+            using var getRequest = new HttpRequestMessage(HttpMethod.Get, requestUrl);
             getRequest.Headers.Range = new RangeHeaderValue(0, 0);
             using var getResponse = await Http.SendAsync(getRequest, HttpCompletionOption.ResponseHeadersRead);
             return getResponse.IsSuccessStatusCode || getResponse.StatusCode == HttpStatusCode.PartialContent;
@@ -355,7 +469,8 @@ internal static class Program
 
     private static async Task DownloadFileAsync(string url, string outputPath)
     {
-        using var response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+        var requestUrl = ToProxiedGithubUrl(url);
+        using var response = await Http.GetAsync(requestUrl, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
 
         await using var outputStream = File.Create(outputPath);
@@ -1079,6 +1194,8 @@ internal static class Program
         [property: JsonPropertyName("tag")] string Tag,
         [property: JsonPropertyName("asset_url_prefix")]
         string AssetUrlPrefix);
+
+    private sealed record GithubProxySettings(bool Enabled, string BaseUrl, string Source);
 
     private sealed class EditableConfig
     {
