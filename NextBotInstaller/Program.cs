@@ -11,13 +11,20 @@ using Spectre.Console;
 internal static class Program
 {
     private const string PythonVersion = "3.14.3";
-    private const string DefaultGithubProxyBaseUrl = "https://ghfast.top/";
     private const string NextBotSourceZipUrl = "https://github.com/Arispex/next-bot/archive/refs/heads/main.zip";
     private const string NextBotExtractedFolderName = "next-bot-main";
     private const string LatestReleaseMetadataUrl =
         "https://raw.githubusercontent.com/astral-sh/python-build-standalone/latest-release/latest-release.json";
+    private static readonly string[] BuiltinGithubProxySites =
+    {
+        "https://ghfast.top/",
+        "https://gh-proxy.org/",
+        "https://hk.gh-proxy.org/",
+        "https://cdn.gh-proxy.org/",
+        "https://edgeone.gh-proxy.org/"
+    };
 
-    private static readonly GithubProxySettings GithubProxy = ResolveGithubProxySettings();
+    private static readonly GithubProxyState GithubProxy = CreateDefaultGithubProxyState();
     private static readonly HttpClient Http = CreateHttpClient();
 
     private static async Task Main()
@@ -33,7 +40,7 @@ internal static class Program
                     .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
                     .PageSize(10)
                     .MoreChoicesText("[grey](上下方向键选择，回车确认)[/]")
-                    .AddChoices("1. 一键安装", "2. 配置管理", "0. 退出"));
+                    .AddChoices("1. 一键安装", "2. 配置管理", "3. 代理站管理", "0. 退出"));
 
             switch (selected)
             {
@@ -58,6 +65,9 @@ internal static class Program
                         AnsiConsole.MarkupLine($"[red]配置处理失败：[/]{Markup.Escape(ex.Message)}");
                     }
 
+                    break;
+                case "3. 代理站管理":
+                    RunProxyManager();
                     break;
                 case "0. 退出":
                     return;
@@ -304,6 +314,119 @@ internal static class Program
         return $"{GithubProxy.BaseUrl}{url}";
     }
 
+    private static GithubProxyState CreateDefaultGithubProxyState()
+    {
+        var defaultUrl = BuiltinGithubProxySites.FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(defaultUrl) &&
+            TryNormalizeProxyBaseUrl(defaultUrl, out var normalized))
+        {
+            return new GithubProxyState
+            {
+                Enabled = true,
+                BaseUrl = normalized,
+                Source = "默认"
+            };
+        }
+
+        return new GithubProxyState
+        {
+            Enabled = false,
+            BaseUrl = string.Empty,
+            Source = "默认"
+        };
+    }
+
+    private static void RunProxyManager()
+    {
+        ShowSectionTitle("代理站管理", "可关闭代理、切换预设代理，或临时添加代理站");
+
+        while (true)
+        {
+            var table = new Table()
+                .Border(TableBorder.Rounded)
+                .BorderColor(Color.Grey37)
+                .AddColumn("[bold #7dd3fc]项目[/]")
+                .AddColumn("[bold #7dd3fc]值[/]");
+            table.AddRow("当前状态", Markup.Escape(GetGithubProxyStatusText()));
+            table.AddRow("默认代理站", Markup.Escape(BuiltinGithubProxySites[0]));
+            table.AddRow("预设数量", BuiltinGithubProxySites.Length.ToString());
+
+            AnsiConsole.Write(
+                new Panel(table)
+                    .Header("[bold #93c5fd]代理配置[/]")
+                    .Border(BoxBorder.Rounded)
+                    .BorderStyle(new Style(foreground: Color.Grey37))
+                    .Expand());
+
+            var selected = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("[bold #7dd3fc]请选择代理操作[/]")
+                    .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
+                    .AddChoices(
+                        "使用默认代理站",
+                        "选择预设代理站",
+                        "临时添加并使用代理站",
+                        "关闭代理站",
+                        "返回"));
+
+            switch (selected)
+            {
+                case "使用默认代理站":
+                {
+                    if (!TryNormalizeProxyBaseUrl(BuiltinGithubProxySites[0], out var normalized))
+                    {
+                        AnsiConsole.MarkupLine("[red]默认代理站格式无效。[/]");
+                        break;
+                    }
+
+                    ApplyProxyState(true, normalized, "默认");
+                    AnsiConsole.MarkupLine($"[green]已切换到默认代理：[/]{Markup.Escape(normalized)}");
+                    break;
+                }
+                case "选择预设代理站":
+                {
+                    var proxy = AnsiConsole.Prompt(
+                        new SelectionPrompt<string>()
+                            .Title("[bold #7dd3fc]请选择一个预设代理站[/]")
+                            .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
+                            .AddChoices(BuiltinGithubProxySites));
+
+                    if (!TryNormalizeProxyBaseUrl(proxy, out var normalized))
+                    {
+                        AnsiConsole.MarkupLine("[red]代理地址格式无效。[/]");
+                        break;
+                    }
+
+                    ApplyProxyState(true, normalized, "预设");
+                    AnsiConsole.MarkupLine($"[green]已切换代理：[/]{Markup.Escape(normalized)}");
+                    break;
+                }
+                case "临时添加并使用代理站":
+                {
+                    var input = AnsiConsole.Prompt(
+                        new TextPrompt<string>("请输入代理站地址（例如 https://gh-proxy.org/）")
+                            .Validate(value =>
+                                TryNormalizeProxyBaseUrl(value, out _)
+                                    ? ValidationResult.Success()
+                                    : ValidationResult.Error("[red]请输入有效的 http/https 代理地址[/]")));
+
+                    TryNormalizeProxyBaseUrl(input, out var normalized);
+                    ApplyProxyState(true, normalized, "临时");
+                    AnsiConsole.MarkupLine($"[green]已使用临时代理：[/]{Markup.Escape(normalized)}");
+                    break;
+                }
+                case "关闭代理站":
+                    ApplyProxyState(false, string.Empty, "手动关闭");
+                    AnsiConsole.MarkupLine("[yellow]代理站已关闭。[/]");
+                    break;
+                case "返回":
+                    return;
+            }
+
+            AnsiConsole.WriteLine();
+        }
+    }
+
     private static bool IsGithubHost(string host)
     {
         var normalized = host.ToLowerInvariant();
@@ -311,35 +434,6 @@ internal static class Program
                normalized.EndsWith(".github.com", StringComparison.Ordinal) ||
                normalized == "githubusercontent.com" ||
                normalized.EndsWith(".githubusercontent.com", StringComparison.Ordinal);
-    }
-
-    private static GithubProxySettings ResolveGithubProxySettings()
-    {
-        var candidates = new[]
-        {
-            ("GITHUB_PROXY", Environment.GetEnvironmentVariable("GITHUB_PROXY"))
-        };
-
-        foreach (var candidate in candidates)
-        {
-            if (string.IsNullOrWhiteSpace(candidate.Item2))
-            {
-                continue;
-            }
-
-            var configuredValue = candidate.Item2.Trim();
-            if (IsProxyDisabledValue(configuredValue))
-            {
-                return new GithubProxySettings(false, string.Empty, $"环境变量 {candidate.Item1}");
-            }
-
-            if (TryNormalizeProxyBaseUrl(configuredValue, out var normalizedProxy))
-            {
-                return new GithubProxySettings(true, normalizedProxy, $"环境变量 {candidate.Item1}");
-            }
-        }
-
-        return new GithubProxySettings(true, DefaultGithubProxyBaseUrl, "默认");
     }
 
     private static bool TryNormalizeProxyBaseUrl(string raw, out string normalized)
@@ -369,12 +463,6 @@ internal static class Program
         return true;
     }
 
-    private static bool IsProxyDisabledValue(string value)
-    {
-        var normalized = value.Trim().ToLowerInvariant();
-        return normalized is "0" or "off" or "false" or "disable" or "disabled" or "none";
-    }
-
     private static string GetGithubProxyStatusText()
     {
         if (!GithubProxy.Enabled)
@@ -383,6 +471,13 @@ internal static class Program
         }
 
         return $"{GithubProxy.BaseUrl}（{GithubProxy.Source}）";
+    }
+
+    private static void ApplyProxyState(bool enabled, string baseUrl, string source)
+    {
+        GithubProxy.Enabled = enabled;
+        GithubProxy.BaseUrl = baseUrl;
+        GithubProxy.Source = source;
     }
 
     private static async Task<ArchivePlan> ResolveArchivePlanAsync(string pythonVersion)
@@ -1393,7 +1488,12 @@ internal static class Program
 
     private sealed record LatestReleaseMetadata(string Tag, string AssetUrlPrefix);
 
-    private sealed record GithubProxySettings(bool Enabled, string BaseUrl, string Source);
+    private sealed class GithubProxyState
+    {
+        public bool Enabled { get; set; }
+        public string BaseUrl { get; set; } = string.Empty;
+        public string Source { get; set; } = string.Empty;
+    }
 
     private sealed class EditableConfig
     {
