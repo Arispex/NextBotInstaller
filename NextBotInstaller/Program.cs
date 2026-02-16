@@ -134,6 +134,19 @@ internal static class Program
                 .Header("[bold #4ade80]安装完成[/]")
                 .Border(BoxBorder.Rounded)
                 .BorderStyle(new Style(foreground: Color.Green)));
+
+        var configureNow = AnsiConsole.Confirm(
+            "是否立即创建或修改配置文件 [bold].env[/]？",
+            true);
+
+        if (configureNow)
+        {
+            RunConfigFileWizard();
+            return;
+        }
+
+        AnsiConsole.MarkupLine(
+            $"[yellow]你可以稍后在主菜单选择“2. 创建或修改配置文件”，然后再运行脚本：[/][bold]{Markup.Escape(Path.GetRelativePath(workingDirectory, scriptPath))}[/]");
     }
 
     private static void ShowWelcomeScreen()
