@@ -19,16 +19,17 @@ internal static class Program
 
     private static async Task Main()
     {
-        AnsiConsole.Write(
-            new FigletText("NextBot Installer")
-                .Centered()
-                .Color(Color.Cyan1));
+        ShowWelcomeScreen();
 
         while (true)
         {
+            ShowMenuHeader();
             var selected = AnsiConsole.Prompt(
                 new SelectionPrompt<string>()
-                    .Title("[bold]请选择功能[/]")
+                    .Title("[bold #7dd3fc]请选择功能[/]")
+                    .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
+                    .PageSize(10)
+                    .MoreChoicesText("[grey](上下方向键选择，回车确认)[/]")
                     .AddChoices("1. 一键安装", "2. 创建或修改配置文件", "0. 退出"));
 
             switch (selected)
@@ -65,6 +66,8 @@ internal static class Program
 
     private static async Task RunOneClickInstallAsync()
     {
+        ShowSectionTitle("一键安装", "自动下载 Python、安装依赖并生成启动脚本");
+
         var workingDirectory = Directory.GetCurrentDirectory();
         var cacheDirectory = Path.Combine(workingDirectory, ".installer-cache");
         var installDirectory = Path.Combine(workingDirectory, "python");
@@ -85,31 +88,130 @@ internal static class Program
 
         Directory.CreateDirectory(installDirectory);
 
-        AnsiConsole.MarkupLine("[blue]步骤 1/5:[/] 解析可用的 Python 压缩包...");
-        var archivePlan = await ResolveArchivePlanAsync(PythonVersion);
+        var archivePlan = await RunWithStatusAsync(
+            "步骤 1/5 解析可用的 Python 压缩包...",
+            () => ResolveArchivePlanAsync(PythonVersion));
         var archivePath = Path.Combine(cacheDirectory, archivePlan.FileName);
 
-        AnsiConsole.MarkupLine($"[blue]步骤 2/5:[/] 下载 [grey]{Markup.Escape(archivePlan.FileName)}[/]...");
-        await DownloadFileAsync(archivePlan.Url, archivePath);
+        await RunWithStatusAsync(
+            $"步骤 2/5 下载 {archivePlan.FileName}...",
+            () => DownloadFileAsync(archivePlan.Url, archivePath));
 
-        AnsiConsole.MarkupLine("[blue]步骤 3/5:[/] 解压 Python 到当前目录...");
-        await ExtractArchiveAsync(archivePath, installDirectory);
+        await RunWithStatusAsync(
+            "步骤 3/5 解压 Python 到当前目录...",
+            () => ExtractArchiveAsync(archivePath, installDirectory));
 
         var pythonExecutable = FindPythonExecutable(installDirectory);
-        AnsiConsole.MarkupLine($"[green]Python 可执行文件：[/]{Markup.Escape(Path.GetRelativePath(workingDirectory, pythonExecutable))}");
+        AnsiConsole.MarkupLine(
+            $"[grey]Python 可执行文件：[/][white]{Markup.Escape(Path.GetRelativePath(workingDirectory, pythonExecutable))}[/]");
 
-        AnsiConsole.MarkupLine("[blue]步骤 4/5:[/] 安装 uv 并执行 uv sync...");
-        await RunProcessAsync(pythonExecutable, new[] { "-m", "ensurepip", "--upgrade" }, workingDirectory);
-        await RunProcessAsync(pythonExecutable, new[] { "-m", "pip", "install", "--upgrade", "pip", "uv" },
-            workingDirectory);
-        await RunProcessAsync(pythonExecutable, new[] { "-m", "uv", "sync" }, workingDirectory);
+        await RunWithStatusAsync(
+            "步骤 4/5 安装 uv 并执行 uv sync...",
+            async () =>
+            {
+                await RunProcessAsync(pythonExecutable, new[] { "-m", "ensurepip", "--upgrade" }, workingDirectory);
+                await RunProcessAsync(pythonExecutable, new[] { "-m", "pip", "install", "--upgrade", "pip", "uv" },
+                    workingDirectory);
+                await RunProcessAsync(pythonExecutable, new[] { "-m", "uv", "sync" }, workingDirectory);
+            });
 
-        AnsiConsole.MarkupLine("[blue]步骤 5/5:[/] 生成运行脚本...");
-        var scriptPath = CreateRunScript(workingDirectory, pythonExecutable);
+        var scriptPath = await RunWithStatusAsync(
+            "步骤 5/5 生成运行脚本...",
+            () => Task.FromResult(CreateRunScript(workingDirectory, pythonExecutable)));
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[bold green]安装完成。[/]");
-        AnsiConsole.MarkupLine($"运行脚本：[cyan]{Markup.Escape(Path.GetRelativePath(workingDirectory, scriptPath))}[/]");
+        var result = new Table()
+            .RoundedBorder()
+            .BorderColor(Color.Grey37)
+            .AddColumn("[bold #7dd3fc]项目[/]")
+            .AddColumn("[bold #7dd3fc]值[/]");
+        result.AddRow("安装目录", Markup.Escape(installDirectory));
+        result.AddRow("Python 版本", PythonVersion);
+        result.AddRow("运行脚本", Markup.Escape(Path.GetRelativePath(workingDirectory, scriptPath)));
+
+        AnsiConsole.Write(
+            new Panel(result)
+                .Header("[bold #4ade80]安装完成[/]")
+                .Border(BoxBorder.Rounded)
+                .BorderStyle(new Style(foreground: Color.Green)));
+    }
+
+    private static void ShowWelcomeScreen()
+    {
+        AnsiConsole.Clear();
+        AnsiConsole.Write(
+            new FigletText("NextBot")
+                .Centered()
+                .Color(Color.Aquamarine1));
+        AnsiConsole.Write(new Rule("[bold #7dd3fc]Installer Console[/]").RuleStyle("grey").Centered());
+
+        var infoTable = new Table()
+            .Border(TableBorder.Rounded)
+            .BorderColor(Color.Grey37)
+            .AddColumn("[bold #7dd3fc]环境[/]")
+            .AddColumn("[bold #7dd3fc]值[/]");
+        infoTable.AddRow("系统", Markup.Escape(GetCurrentOsName()));
+        infoTable.AddRow("架构", RuntimeInformation.ProcessArchitecture.ToString());
+        infoTable.AddRow("运行目录", Markup.Escape(Directory.GetCurrentDirectory()));
+
+        AnsiConsole.Write(
+            new Panel(infoTable)
+                .Header("[bold #93c5fd]欢迎使用[/]")
+                .Border(BoxBorder.Rounded)
+                .Padding(1, 0, 1, 0));
+        AnsiConsole.WriteLine();
+    }
+
+    private static void ShowMenuHeader()
+    {
+        AnsiConsole.Write(new Rule("[grey]Main Menu[/]").RuleStyle("grey").LeftJustified());
+    }
+
+    private static void ShowSectionTitle(string title, string subtitle)
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.Write(
+            new Rule($"[bold #7dd3fc]{Markup.Escape(title)}[/]")
+                .RuleStyle("grey")
+                .LeftJustified());
+        AnsiConsole.MarkupLine($"[grey]{Markup.Escape(subtitle)}[/]");
+        AnsiConsole.WriteLine();
+    }
+
+    private static async Task RunWithStatusAsync(string message, Func<Task> action)
+    {
+        await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .SpinnerStyle(new Style(foreground: Color.Aquamarine1))
+            .StartAsync($"[bold #7dd3fc]{Markup.Escape(message)}[/]", async _ => await action());
+    }
+
+    private static async Task<T> RunWithStatusAsync<T>(string message, Func<Task<T>> action)
+    {
+        return await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .SpinnerStyle(new Style(foreground: Color.Aquamarine1))
+            .StartAsync($"[bold #7dd3fc]{Markup.Escape(message)}[/]", async _ => await action());
+    }
+
+    private static string GetCurrentOsName()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return "Windows";
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            return "macOS";
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            return "Linux";
+        }
+
+        return RuntimeInformation.OSDescription;
     }
 
     private static async Task<ArchivePlan> ResolveArchivePlanAsync(string pythonVersion)
@@ -466,6 +568,8 @@ internal static class Program
 
     private static void RunConfigFileWizard()
     {
+        ShowSectionTitle("配置管理", "创建、查看并按菜单逐项编辑 .env 配置");
+
         var workingDirectory = Directory.GetCurrentDirectory();
         var envPath = Path.Combine(workingDirectory, ".env");
 
@@ -480,7 +584,8 @@ internal static class Program
 
         var action = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
-                .Title("[bold].env 已存在，请选择操作[/]")
+                .Title("[bold #7dd3fc].env 已存在，请选择操作[/]")
+                .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
                 .AddChoices("修改现有配置", "覆盖重建 .env", "取消"));
 
         switch (action)
@@ -512,7 +617,8 @@ internal static class Program
             ShowCurrentConfig(config);
             var selected = AnsiConsole.Prompt(
                 new SelectionPrompt<string>()
-                    .Title("[bold]请选择要修改的配置项[/]")
+                    .Title("[bold #7dd3fc]请选择要修改的配置项[/]")
+                    .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
                     .AddChoices(
                         "ONEBOT_WS_URLS",
                         "ONEBOT_ACCESS_TOKEN",
@@ -631,18 +737,24 @@ internal static class Program
     {
         var table = new Table()
             .Border(TableBorder.Rounded)
-            .AddColumn("配置项")
-            .AddColumn("当前值");
+            .BorderColor(Color.Grey37)
+            .AddColumn("[bold #7dd3fc]配置项[/]")
+            .AddColumn("[bold #7dd3fc]当前值[/]");
 
-        table.AddRow("ONEBOT_WS_URLS", Markup.Escape(ToEnvArrayLiteral(config.OnebotWsUrls)));
-        table.AddRow("ONEBOT_ACCESS_TOKEN", Markup.Escape(config.OnebotAccessToken));
-        table.AddRow("OWNER_ID", Markup.Escape(ToEnvArrayLiteral(config.OwnerIds)));
-        table.AddRow("GROUP_ID", Markup.Escape(ToEnvArrayLiteral(config.GroupIds)));
-        table.AddRow("RENDER_SERVER_HOST", Markup.Escape(config.RenderServerHost));
-        table.AddRow("RENDER_SERVER_PORT", config.RenderServerPort.ToString());
-        table.AddRow("RENDER_SERVER_PUBLIC_BASE_URL", Markup.Escape(config.RenderServerPublicBaseUrl));
+        table.AddRow("[#93c5fd]ONEBOT_WS_URLS[/]", Markup.Escape(ToEnvArrayLiteral(config.OnebotWsUrls)));
+        table.AddRow("[#93c5fd]ONEBOT_ACCESS_TOKEN[/]", Markup.Escape(config.OnebotAccessToken));
+        table.AddRow("[#93c5fd]OWNER_ID[/]", Markup.Escape(ToEnvArrayLiteral(config.OwnerIds)));
+        table.AddRow("[#93c5fd]GROUP_ID[/]", Markup.Escape(ToEnvArrayLiteral(config.GroupIds)));
+        table.AddRow("[#93c5fd]RENDER_SERVER_HOST[/]", Markup.Escape(config.RenderServerHost));
+        table.AddRow("[#93c5fd]RENDER_SERVER_PORT[/]", config.RenderServerPort.ToString());
+        table.AddRow("[#93c5fd]RENDER_SERVER_PUBLIC_BASE_URL[/]", Markup.Escape(config.RenderServerPublicBaseUrl));
 
-        AnsiConsole.Write(new Panel(table).Header("[bold cyan]当前配置[/]").Expand());
+        AnsiConsole.Write(
+            new Panel(table)
+                .Header("[bold #93c5fd]当前配置[/]")
+                .Border(BoxBorder.Rounded)
+                .BorderStyle(new Style(foreground: Color.Grey37))
+                .Expand());
     }
 
     private static EditableConfig LoadEditableConfig(string envPath)
