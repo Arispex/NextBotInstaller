@@ -23,8 +23,23 @@ jobs:
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "release_name=${tag}" >> "$GITHUB_OUTPUT"
 
-  build:
+  create_release:
     needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ needs.prepare.outputs.tag }}
+          name: ${{ needs.prepare.outputs.release_name }}
+          makeLatest: true
+          generateReleaseNotes: true
+          allowUpdates: true
+
+  build:
+    needs:
+      - prepare
+      - create_release
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -79,32 +94,9 @@ jobs:
           }
           Compress-Archive -Path (Join-Path $PWD "out/$rid/package/NextBot") -DestinationPath $zipPath
 
-      - name: Upload package
-        uses: actions/upload-artifact@v4
+      - name: Upload zip to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: package-${{ matrix.rid }}
-          path: ./out/${{ matrix.rid }}/NextBotInstaller-${{ matrix.rid }}.zip
-          if-no-files-found: error
-
-  release:
-    needs:
-      - prepare
-      - build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all packages
-        uses: actions/download-artifact@v4
-        with:
-          path: ./release-assets
-          pattern: package-*
-          merge-multiple: true
-
-      - name: Create GitHub Release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: ${{ needs.prepare.outputs.tag }}
-          name: ${{ needs.prepare.outputs.release_name }}
-          makeLatest: true
-          generateReleaseNotes: true
-          artifacts: ./release-assets/*.zip
-          artifactErrorsFailBuild: true
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          files: ./out/${{ matrix.rid }}/NextBotInstaller-${{ matrix.rid }}.zip
+          fail_on_unmatched_files: true
