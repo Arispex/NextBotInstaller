@@ -151,13 +151,11 @@ internal static class Program
         var summaryGrid = new Grid();
         summaryGrid.AddColumn(new GridColumn().NoWrap());
         summaryGrid.AddColumn();
-        summaryGrid.AddRow(new Markup("[grey]安装目录[/]"), new Markup($"[white]{Markup.Escape(installDirectory)}[/]"));
+        summaryGrid.AddRow(new Markup("[grey]安装目录[/]"), new Markup($"[white]{Markup.Escape(workingDirectory)}[/]"));
+        summaryGrid.AddRow(new Markup("[grey]Python 安装目录[/]"), new Markup($"[white]{Markup.Escape(installDirectory)}[/]"));
         summaryGrid.AddRow(new Markup("[grey]Python 版本[/]"), new Markup($"[white]{Markup.Escape(PythonVersion)}[/]"));
-        summaryGrid.AddRow(new Markup("[grey]运行脚本[/]"),
+        summaryGrid.AddRow(new Markup("[grey]启动脚本[/]"),
             new Markup($"[white]{Markup.Escape(Path.GetRelativePath(workingDirectory, scriptPath))}[/]"));
-        summaryGrid.AddEmptyRow();
-        summaryGrid.AddRow(new Markup("[grey]下一步[/]"),
-            new Markup("[bold #4ade80]先到“配置管理”完成 .env 配置，再运行启动脚本[/]"));
 
         AnsiConsole.Write(
             new Panel(summaryGrid)
