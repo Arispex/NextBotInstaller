@@ -270,7 +270,6 @@ internal static class Program
     {
         var candidates = new[]
         {
-            ("NEXTBOT_GITHUB_PROXY", Environment.GetEnvironmentVariable("NEXTBOT_GITHUB_PROXY")),
             ("GITHUB_PROXY", Environment.GetEnvironmentVariable("GITHUB_PROXY"))
         };
 
@@ -341,13 +340,6 @@ internal static class Program
 
     private static async Task<ArchivePlan> ResolveArchivePlanAsync(string pythonVersion)
     {
-        var customArchiveUrl = Environment.GetEnvironmentVariable("NEXTBOT_PYTHON_ARCHIVE_URL");
-        if (!string.IsNullOrWhiteSpace(customArchiveUrl))
-        {
-            var customFileName = Path.GetFileName(new Uri(customArchiveUrl).AbsolutePath);
-            return new ArchivePlan(customArchiveUrl, customFileName);
-        }
-
         var releaseJson = await Http.GetStringAsync(ToProxiedGithubUrl(LatestReleaseMetadataUrl));
         var metadata = JsonSerializer.Deserialize<LatestReleaseMetadata>(releaseJson,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
@@ -368,7 +360,7 @@ internal static class Program
         }
 
         throw new InvalidOperationException(
-            "未找到当前系统可用的 Python 3.14.3 压缩包。你可以设置环境变量 NEXTBOT_PYTHON_ARCHIVE_URL 指定下载地址。"
+            "未找到当前系统可用的 Python 3.14.3 压缩包。请检查网络连接和代理设置后重试。"
         );
     }
 
