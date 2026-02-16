@@ -795,6 +795,8 @@ internal static class Program
                 new SelectionPrompt<string>()
                     .Title("[bold #7dd3fc]请选择要修改的配置项[/]")
                     .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
+                    .PageSize(16)
+                    .MoreChoicesText("[grey](可继续上下移动查看“保存并返回 / 放弃并返回”)[/]")
                     .AddChoices(
                         "DRIVER",
                         "LOCALSTORE_USE_CWD",
