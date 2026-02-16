@@ -70,7 +70,7 @@ internal static class Program
 
     private static async Task RunOneClickInstallAsync()
     {
-        ShowSectionTitle("一键安装", "自动下载 Python、安装依赖并生成启动脚本");
+        ShowSectionTitle("一键安装", "自动下载 NextBot、安装环境并生成启动脚本");
         AnsiConsole.MarkupLine($"[grey]GitHub 代理：[/][white]{Markup.Escape(GetGithubProxyStatusText())}[/]");
         AnsiConsole.WriteLine();
 
@@ -153,9 +153,6 @@ internal static class Program
                 .Header("[bold #4ade80]安装完成[/]")
                 .Border(BoxBorder.Rounded)
                 .BorderStyle(new Style(foreground: Color.Green)));
-
-        AnsiConsole.MarkupLine("[bold #7dd3fc]下一步：进入配置管理，按需逐项修改配置。[/]");
-        RunConfigFileWizard();
     }
 
     private static void DeployProjectSource(string sourceZipPath, string workingDirectory, string cacheDirectory)
