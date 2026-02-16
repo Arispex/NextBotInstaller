@@ -148,20 +148,23 @@ internal static class Program
             () => Task.FromResult(CreateRunScript(workingDirectory, pythonExecutable)));
 
         AnsiConsole.WriteLine();
-        var result = new Table()
-            .RoundedBorder()
-            .BorderColor(Color.Grey37)
-            .AddColumn("[bold #7dd3fc]项目[/]")
-            .AddColumn("[bold #7dd3fc]值[/]");
-        result.AddRow("安装目录", Markup.Escape(installDirectory));
-        result.AddRow("Python 版本", PythonVersion);
-        result.AddRow("运行脚本", Markup.Escape(Path.GetRelativePath(workingDirectory, scriptPath)));
+        var summaryGrid = new Grid();
+        summaryGrid.AddColumn(new GridColumn().NoWrap());
+        summaryGrid.AddColumn();
+        summaryGrid.AddRow(new Markup("[grey]安装目录[/]"), new Markup($"[white]{Markup.Escape(installDirectory)}[/]"));
+        summaryGrid.AddRow(new Markup("[grey]Python 版本[/]"), new Markup($"[white]{Markup.Escape(PythonVersion)}[/]"));
+        summaryGrid.AddRow(new Markup("[grey]运行脚本[/]"),
+            new Markup($"[white]{Markup.Escape(Path.GetRelativePath(workingDirectory, scriptPath))}[/]"));
+        summaryGrid.AddEmptyRow();
+        summaryGrid.AddRow(new Markup("[grey]下一步[/]"),
+            new Markup("[bold #4ade80]先到“配置管理”完成 .env 配置，再运行启动脚本[/]"));
 
         AnsiConsole.Write(
-            new Panel(result)
+            new Panel(summaryGrid)
                 .Header("[bold #4ade80]安装完成[/]")
                 .Border(BoxBorder.Rounded)
-                .BorderStyle(new Style(foreground: Color.Green)));
+                .BorderStyle(new Style(foreground: Color.Green))
+                .Padding(1, 0, 1, 0));
     }
 
     private static void DeployProjectSource(string sourceZipPath, string workingDirectory, string cacheDirectory)
