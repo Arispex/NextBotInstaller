@@ -45,7 +45,15 @@ internal static class Program
 
                     break;
                 case "2. 创建或修改配置文件":
-                    AnsiConsole.MarkupLine("[yellow]该功能正在开发中，下一步会补上。[/]");
+                    try
+                    {
+                        RunConfigFileWizard();
+                    }
+                    catch (Exception ex)
+                    {
+                        AnsiConsole.MarkupLine($"[red]配置处理失败：[/]{Markup.Escape(ex.Message)}");
+                    }
+
                     break;
                 case "0. 退出":
                     return;
@@ -456,6 +464,292 @@ internal static class Program
         return unixScriptPath;
     }
 
+    private static void RunConfigFileWizard()
+    {
+        var workingDirectory = Directory.GetCurrentDirectory();
+        var envPath = Path.Combine(workingDirectory, ".env");
+
+        if (!File.Exists(envPath))
+        {
+            AnsiConsole.MarkupLine("[blue]未检测到 .env，准备创建新配置文件。[/]");
+            var inputs = PromptConfigInputs(null, null, null);
+            WriteFullEnvFile(envPath, inputs);
+            AnsiConsole.MarkupLine("[green].env 创建完成。[/]");
+            return;
+        }
+
+        var action = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("[bold].env 已存在，请选择操作[/]")
+                .AddChoices("修改现有配置", "覆盖重建 .env", "取消"));
+
+        switch (action)
+        {
+            case "修改现有配置":
+            {
+                var currentValues = ParseEnvValues(envPath);
+                currentValues.TryGetValue("OWNER_ID", out var existingOwnerIds);
+                currentValues.TryGetValue("GROUP_ID", out var existingGroupIds);
+                currentValues.TryGetValue("RENDER_SERVER_PUBLIC_BASE_URL", out var existingPublicBaseUrl);
+
+                var ownerDefaults = ParseEnvArray(existingOwnerIds);
+                var groupDefaults = ParseEnvArray(existingGroupIds);
+                var ipDefault = ParsePublicIpFromUrl(existingPublicBaseUrl);
+
+                var inputs = PromptConfigInputs(ownerDefaults, groupDefaults, ipDefault);
+                UpdateEnvValues(envPath, new Dictionary<string, string>
+                {
+                    ["OWNER_ID"] = ToEnvArrayLiteral(inputs.OwnerIds),
+                    ["GROUP_ID"] = ToEnvArrayLiteral(inputs.GroupIds),
+                    ["RENDER_SERVER_PUBLIC_BASE_URL"] = $"http://{inputs.PublicIp}:18081"
+                });
+
+                AnsiConsole.MarkupLine("[green].env 配置已更新。[/]");
+                break;
+            }
+            case "覆盖重建 .env":
+            {
+                var inputs = PromptConfigInputs(null, null, null);
+                WriteFullEnvFile(envPath, inputs);
+                AnsiConsole.MarkupLine("[green].env 已按模板重建。[/]");
+                break;
+            }
+            default:
+                AnsiConsole.MarkupLine("[yellow]已取消。[/]");
+                break;
+        }
+    }
+
+    private static ConfigInputs PromptConfigInputs(
+        IReadOnlyList<string>? ownerDefaults,
+        IReadOnlyList<string>? groupDefaults,
+        string? publicIpDefault)
+    {
+        var ownerDefaultText = ToCommaSeparated(ownerDefaults);
+        var groupDefaultText = ToCommaSeparated(groupDefaults);
+        var ipDefaultText = string.IsNullOrWhiteSpace(publicIpDefault) ? "127.0.0.1" : publicIpDefault;
+
+        var ownerRaw = AnsiConsole.Prompt(
+            new TextPrompt<string>("请输入 OWNER_ID（多个用英文逗号分隔）")
+                .AllowEmpty()
+                .DefaultValue(ownerDefaultText)
+                .ShowDefaultValue(true));
+
+        var groupRaw = AnsiConsole.Prompt(
+            new TextPrompt<string>("请输入 GROUP_ID（多个用英文逗号分隔）")
+                .AllowEmpty()
+                .DefaultValue(groupDefaultText)
+                .ShowDefaultValue(true));
+
+        var publicIpRaw = AnsiConsole.Prompt(
+            new TextPrompt<string>("请输入公网 IP（用于 RENDER_SERVER_PUBLIC_BASE_URL）")
+                .Validate(ip => !string.IsNullOrWhiteSpace(ip)
+                    ? ValidationResult.Success()
+                    : ValidationResult.Error("[red]公网 IP 不能为空[/]"))
+                .DefaultValue(ipDefaultText)
+                .ShowDefaultValue(true));
+
+        return new ConfigInputs(
+            ParseCommaSeparatedValues(ownerRaw),
+            ParseCommaSeparatedValues(groupRaw),
+            NormalizePublicIp(publicIpRaw));
+    }
+
+    private static void WriteFullEnvFile(string envPath, ConfigInputs inputs)
+    {
+        var content = BuildEnvTemplate(inputs);
+        File.WriteAllText(envPath, content, new UTF8Encoding(false));
+    }
+
+    private static string BuildEnvTemplate(ConfigInputs inputs)
+    {
+        var ownerLiteral = ToEnvArrayLiteral(inputs.OwnerIds);
+        var groupLiteral = ToEnvArrayLiteral(inputs.GroupIds);
+        var publicBaseUrl = $"http://{inputs.PublicIp}:18081";
+
+        var lines = new[]
+        {
+            "DRIVER=~websockets",
+            "LOCALSTORE_USE_CWD=true",
+            string.Empty,
+            "COMMAND_START=[\"/\", \"\"]",
+            string.Empty,
+            "ONEBOT_WS_URLS=[\"ws://127.0.0.1:3001\"]",
+            "ONEBOT_ACCESS_TOKEN=S~VPgQf9t0bhvf_u",
+            string.Empty,
+            $"OWNER_ID={ownerLiteral}",
+            $"GROUP_ID={groupLiteral}",
+            string.Empty,
+            "RENDER_SERVER_HOST=0.0.0.0",
+            "RENDER_SERVER_PORT=18081",
+            $"RENDER_SERVER_PUBLIC_BASE_URL={publicBaseUrl}"
+        };
+
+        return string.Join(Environment.NewLine, lines) + Environment.NewLine;
+    }
+
+    private static Dictionary<string, string> ParseEnvValues(string envPath)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var line in File.ReadAllLines(envPath))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0 || trimmed.StartsWith('#'))
+            {
+                continue;
+            }
+
+            var index = line.IndexOf('=');
+            if (index <= 0)
+            {
+                continue;
+            }
+
+            var key = line[..index].Trim();
+            var value = line[(index + 1)..].Trim();
+            if (key.Length > 0)
+            {
+                result[key] = value;
+            }
+        }
+
+        return result;
+    }
+
+    private static void UpdateEnvValues(string envPath, IReadOnlyDictionary<string, string> updates)
+    {
+        var lines = File.ReadAllLines(envPath).ToList();
+        var touched = new HashSet<string>(StringComparer.Ordinal);
+
+        for (var i = 0; i < lines.Count; i++)
+        {
+            var line = lines[i];
+            var index = line.IndexOf('=');
+            if (index <= 0)
+            {
+                continue;
+            }
+
+            var key = line[..index].Trim();
+            if (!updates.TryGetValue(key, out var newValue))
+            {
+                continue;
+            }
+
+            lines[i] = $"{key}={newValue}";
+            touched.Add(key);
+        }
+
+        foreach (var pair in updates)
+        {
+            if (touched.Contains(pair.Key))
+            {
+                continue;
+            }
+
+            lines.Add($"{pair.Key}={pair.Value}");
+        }
+
+        var output = string.Join(Environment.NewLine, lines) + Environment.NewLine;
+        File.WriteAllText(envPath, output, new UTF8Encoding(false));
+    }
+
+    private static string ToEnvArrayLiteral(IReadOnlyList<string> values)
+    {
+        if (values.Count == 0)
+        {
+            return "[\"\"]";
+        }
+
+        var escaped = values
+            .Select(v => v.Replace("\\", "\\\\").Replace("\"", "\\\""))
+            .Select(v => $"\"{v}\"");
+
+        return $"[{string.Join(",", escaped)}]";
+    }
+
+    private static IReadOnlyList<string> ParseCommaSeparatedValues(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return Array.Empty<string>();
+        }
+
+        return raw
+            .Split(',', StringSplitOptions.TrimEntries)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<string> ParseEnvArray(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<string[]>(value);
+            if (parsed is null)
+            {
+                return Array.Empty<string>();
+            }
+
+            return parsed
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .ToArray();
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    private static string ParsePublicIpFromUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return string.Empty;
+        }
+
+        if (Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host))
+        {
+            return uri.Host;
+        }
+
+        return string.Empty;
+    }
+
+    private static string NormalizePublicIp(string rawInput)
+    {
+        var trimmed = rawInput.Trim();
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absoluteUri) &&
+            !string.IsNullOrWhiteSpace(absoluteUri.Host))
+        {
+            return absoluteUri.Host;
+        }
+
+        if (Uri.TryCreate($"http://{trimmed}", UriKind.Absolute, out var withSchemeUri) &&
+            !string.IsNullOrWhiteSpace(withSchemeUri.Host))
+        {
+            return withSchemeUri.Host;
+        }
+
+        return trimmed;
+    }
+
+    private static string ToCommaSeparated(IReadOnlyList<string>? values)
+    {
+        if (values is null || values.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return string.Join(",", values);
+    }
+
     private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient
@@ -472,4 +766,9 @@ internal static class Program
         [property: JsonPropertyName("tag")] string Tag,
         [property: JsonPropertyName("asset_url_prefix")]
         string AssetUrlPrefix);
+
+    private sealed record ConfigInputs(
+        IReadOnlyList<string> OwnerIds,
+        IReadOnlyList<string> GroupIds,
+        string PublicIp);
 }
