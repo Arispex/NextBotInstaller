@@ -6,7 +6,6 @@ using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Spectre.Console;
 
 internal static class Program
@@ -389,8 +388,7 @@ internal static class Program
     private static async Task<ArchivePlan> ResolveArchivePlanAsync(string pythonVersion)
     {
         var releaseJson = await Http.GetStringAsync(ToProxiedGithubUrl(LatestReleaseMetadataUrl));
-        var metadata = JsonSerializer.Deserialize<LatestReleaseMetadata>(releaseJson,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var metadata = ParseLatestReleaseMetadata(releaseJson);
 
         if (metadata is null || string.IsNullOrWhiteSpace(metadata.Tag) || string.IsNullOrWhiteSpace(metadata.AssetUrlPrefix))
         {
@@ -1236,13 +1234,7 @@ internal static class Program
 
         try
         {
-            var parsed = JsonSerializer.Deserialize<string[]>(value);
-            if (parsed is null)
-            {
-                return Array.Empty<string>();
-            }
-
-            return parsed
+            return ParseStringJsonArray(value, filterEmptyValues: true)
                 .Where(item => !string.IsNullOrWhiteSpace(item))
                 .ToArray();
         }
@@ -1261,12 +1253,77 @@ internal static class Program
 
         try
         {
-            return JsonSerializer.Deserialize<string[]>(value) ?? Array.Empty<string>();
+            return ParseStringJsonArray(value, filterEmptyValues: false);
         }
         catch
         {
             return Array.Empty<string>();
         }
+    }
+
+    private static LatestReleaseMetadata? ParseLatestReleaseMetadata(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            if (!document.RootElement.TryGetProperty("tag", out var tagElement) ||
+                tagElement.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            if (!document.RootElement.TryGetProperty("asset_url_prefix", out var prefixElement) ||
+                prefixElement.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            var tag = tagElement.GetString();
+            var assetUrlPrefix = prefixElement.GetString();
+            if (string.IsNullOrWhiteSpace(tag) || string.IsNullOrWhiteSpace(assetUrlPrefix))
+            {
+                return null;
+            }
+
+            return new LatestReleaseMetadata(tag, assetUrlPrefix);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static IReadOnlyList<string> ParseStringJsonArray(string json, bool filterEmptyValues)
+    {
+        using var document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<string>();
+        }
+
+        var result = new List<string>();
+        foreach (var element in document.RootElement.EnumerateArray())
+        {
+            if (element.ValueKind != JsonValueKind.String)
+            {
+                continue;
+            }
+
+            var value = element.GetString() ?? string.Empty;
+            if (filterEmptyValues && string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            result.Add(value);
+        }
+
+        return result;
     }
 
     private static bool ParseBoolOrDefault(string? value, bool fallback)
@@ -1334,10 +1391,7 @@ internal static class Program
 
     private sealed record ArchivePlan(string Url, string FileName);
 
-    private sealed record LatestReleaseMetadata(
-        [property: JsonPropertyName("tag")] string Tag,
-        [property: JsonPropertyName("asset_url_prefix")]
-        string AssetUrlPrefix);
+    private sealed record LatestReleaseMetadata(string Tag, string AssetUrlPrefix);
 
     private sealed record GithubProxySettings(bool Enabled, string BaseUrl, string Source);
 
