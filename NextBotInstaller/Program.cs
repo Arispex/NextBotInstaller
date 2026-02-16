@@ -12,7 +12,7 @@ using Spectre.Console;
 internal static class Program
 {
     private const string PythonVersion = "3.14.3";
-    private const string DefaultGithubProxyBaseUrl = "https://gh-proxy.org/";
+    private const string DefaultGithubProxyBaseUrl = "https://ghfast.top/";
     private const string NextBotSourceZipUrl = "https://github.com/Arispex/next-bot/archive/refs/heads/main.zip";
     private const string NextBotExtractedFolderName = "next-bot-main";
     private const string LatestReleaseMetadataUrl =
@@ -154,18 +154,8 @@ internal static class Program
                 .Border(BoxBorder.Rounded)
                 .BorderStyle(new Style(foreground: Color.Green)));
 
-        var configureNow = AnsiConsole.Confirm(
-            "是否立即创建或修改配置文件 [bold].env[/]？",
-            true);
-
-        if (configureNow)
-        {
-            RunConfigFileWizard();
-            return;
-        }
-
-        AnsiConsole.MarkupLine(
-            $"[yellow]你可以稍后在主菜单选择“2. 配置管理”，然后再运行脚本：[/][bold]{Markup.Escape(Path.GetRelativePath(workingDirectory, scriptPath))}[/]");
+        AnsiConsole.MarkupLine("[bold #7dd3fc]下一步：进入配置管理，按需逐项修改配置。[/]");
+        RunConfigFileWizard();
     }
 
     private static void DeployProjectSource(string sourceZipPath, string workingDirectory, string cacheDirectory)
@@ -756,10 +746,14 @@ internal static class Program
 
         if (!File.Exists(envPath))
         {
-            AnsiConsole.MarkupLine("[blue]未检测到 .env，准备创建新配置文件。[/]");
-            var inputs = PromptConfigInputs(null, null, null);
-            WriteFullEnvFile(envPath, inputs);
-            AnsiConsole.MarkupLine("[green].env 创建完成。[/]");
+            AnsiConsole.MarkupLine("[blue]未检测到 .env，已自动创建默认配置。[/]");
+            WriteFullEnvFile(
+                envPath,
+                new ConfigInputs(
+                    Array.Empty<string>(),
+                    Array.Empty<string>(),
+                    "127.0.0.1"));
+            RunDetailedConfigEditor(envPath);
             return;
         }
 
@@ -778,8 +772,12 @@ internal static class Program
             }
             case "覆盖重建 .env":
             {
-                var inputs = PromptConfigInputs(null, null, null);
-                WriteFullEnvFile(envPath, inputs);
+                WriteFullEnvFile(
+                    envPath,
+                    new ConfigInputs(
+                        Array.Empty<string>(),
+                        Array.Empty<string>(),
+                        "127.0.0.1"));
                 AnsiConsole.MarkupLine("[green].env 已按模板重建。[/]");
                 break;
             }
@@ -801,6 +799,9 @@ internal static class Program
                     .Title("[bold #7dd3fc]请选择要修改的配置项[/]")
                     .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
                     .AddChoices(
+                        "DRIVER",
+                        "LOCALSTORE_USE_CWD",
+                        "COMMAND_START",
                         "ONEBOT_WS_URLS",
                         "ONEBOT_ACCESS_TOKEN",
                         "OWNER_ID",
@@ -813,6 +814,41 @@ internal static class Program
 
             switch (selected)
             {
+                case "DRIVER":
+                {
+                    var driver = AnsiConsole.Prompt(
+                        new TextPrompt<string>("请输入 DRIVER")
+                            .Validate(value => !string.IsNullOrWhiteSpace(value)
+                                ? ValidationResult.Success()
+                                : ValidationResult.Error("[red]DRIVER 不能为空[/]"))
+                            .DefaultValue(config.Driver)
+                            .ShowDefaultValue(true));
+                    config.Driver = driver.Trim();
+                    break;
+                }
+                case "LOCALSTORE_USE_CWD":
+                {
+                    var useCwd = AnsiConsole.Prompt(
+                        new SelectionPrompt<string>()
+                            .Title("请选择 LOCALSTORE_USE_CWD")
+                            .AddChoices("true", "false")
+                            .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
+                            .UseConverter(v => v == (config.LocalstoreUseCwd ? "true" : "false")
+                                ? $"{v} (当前)"
+                                : v));
+                    config.LocalstoreUseCwd = string.Equals(useCwd, "true", StringComparison.OrdinalIgnoreCase);
+                    break;
+                }
+                case "COMMAND_START":
+                {
+                    var commandRaw = AnsiConsole.Prompt(
+                        new TextPrompt<string>("请输入 COMMAND_START（多个用英文逗号分隔）")
+                            .AllowEmpty()
+                            .DefaultValue(ToCommaSeparated(config.CommandStart))
+                            .ShowDefaultValue(true));
+                    config.CommandStart = ParseCommaSeparatedValuesAllowEmpty(commandRaw).ToList();
+                    break;
+                }
                 case "ONEBOT_WS_URLS":
                 {
                     var wsRaw = AnsiConsole.Prompt(
@@ -893,6 +929,9 @@ internal static class Program
                 {
                     UpdateEnvValues(envPath, new Dictionary<string, string>
                     {
+                        ["DRIVER"] = config.Driver,
+                        ["LOCALSTORE_USE_CWD"] = config.LocalstoreUseCwd ? "true" : "false",
+                        ["COMMAND_START"] = ToEnvArrayLiteral(config.CommandStart),
                         ["ONEBOT_WS_URLS"] = ToEnvArrayLiteral(config.OnebotWsUrls),
                         ["ONEBOT_ACCESS_TOKEN"] = config.OnebotAccessToken,
                         ["OWNER_ID"] = ToEnvArrayLiteral(config.OwnerIds),
@@ -922,6 +961,9 @@ internal static class Program
             .AddColumn("[bold #7dd3fc]配置项[/]")
             .AddColumn("[bold #7dd3fc]当前值[/]");
 
+        table.AddRow("[#93c5fd]DRIVER[/]", Markup.Escape(config.Driver));
+        table.AddRow("[#93c5fd]LOCALSTORE_USE_CWD[/]", config.LocalstoreUseCwd ? "true" : "false");
+        table.AddRow("[#93c5fd]COMMAND_START[/]", Markup.Escape(ToEnvArrayLiteral(config.CommandStart)));
         table.AddRow("[#93c5fd]ONEBOT_WS_URLS[/]", Markup.Escape(ToEnvArrayLiteral(config.OnebotWsUrls)));
         table.AddRow("[#93c5fd]ONEBOT_ACCESS_TOKEN[/]", Markup.Escape(config.OnebotAccessToken));
         table.AddRow("[#93c5fd]OWNER_ID[/]", Markup.Escape(ToEnvArrayLiteral(config.OwnerIds)));
@@ -942,6 +984,14 @@ internal static class Program
     {
         var values = ParseEnvValues(envPath);
 
+        var driver = GetEnvValue(values, "DRIVER");
+        if (string.IsNullOrWhiteSpace(driver))
+        {
+            driver = "~websockets";
+        }
+
+        var localstoreUseCwd = ParseBoolOrDefault(GetEnvValue(values, "LOCALSTORE_USE_CWD"), true);
+        var commandStart = ParseEnvArrayAllowEmpty(GetEnvValue(values, "COMMAND_START"));
         var onebotWsUrls = ParseEnvArray(GetEnvValue(values, "ONEBOT_WS_URLS"));
         var ownerIds = ParseEnvArray(GetEnvValue(values, "OWNER_ID"));
         var groupIds = ParseEnvArray(GetEnvValue(values, "GROUP_ID"));
@@ -961,6 +1011,9 @@ internal static class Program
         }
 
         return new EditableConfig(
+            driver,
+            localstoreUseCwd,
+            commandStart.Count > 0 ? commandStart.ToList() : new List<string> { "/", string.Empty },
             onebotWsUrls.Count > 0 ? onebotWsUrls.ToList() : new List<string> { "ws://127.0.0.1:3001" },
             GetEnvValue(values, "ONEBOT_ACCESS_TOKEN") ?? "S~VPgQf9t0bhvf_u",
             ownerIds.ToList(),
@@ -1056,7 +1109,7 @@ internal static class Program
             "COMMAND_START=[\"/\", \"\"]",
             string.Empty,
             "ONEBOT_WS_URLS=[\"ws://127.0.0.1:3001\"]",
-            "ONEBOT_ACCESS_TOKEN=Cd2K71HE7SWr2vT",
+            "ONEBOT_ACCESS_TOKEN=",
             string.Empty,
             $"OWNER_ID={ownerLiteral}",
             $"GROUP_ID={groupLiteral}",
@@ -1163,6 +1216,18 @@ internal static class Program
             .ToArray();
     }
 
+    private static IReadOnlyList<string> ParseCommaSeparatedValuesAllowEmpty(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return new[] { string.Empty };
+        }
+
+        return raw
+            .Split(',', StringSplitOptions.TrimEntries)
+            .ToArray();
+    }
+
     private static IReadOnlyList<string> ParseEnvArray(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -1186,6 +1251,33 @@ internal static class Program
         {
             return Array.Empty<string>();
         }
+    }
+
+    private static IReadOnlyList<string> ParseEnvArrayAllowEmpty(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<string[]>(value) ?? Array.Empty<string>();
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    private static bool ParseBoolOrDefault(string? value, bool fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        return bool.TryParse(value.Trim(), out var parsed) ? parsed : fallback;
     }
 
     private static string ParsePublicIpFromUrl(string? url)
@@ -1253,6 +1345,9 @@ internal static class Program
     private sealed class EditableConfig
     {
         public EditableConfig(
+            string driver,
+            bool localstoreUseCwd,
+            List<string> commandStart,
             List<string> onebotWsUrls,
             string onebotAccessToken,
             List<string> ownerIds,
@@ -1261,6 +1356,9 @@ internal static class Program
             int renderServerPort,
             string renderServerPublicBaseUrl)
         {
+            Driver = driver;
+            LocalstoreUseCwd = localstoreUseCwd;
+            CommandStart = commandStart;
             OnebotWsUrls = onebotWsUrls;
             OnebotAccessToken = onebotAccessToken;
             OwnerIds = ownerIds;
@@ -1270,6 +1368,9 @@ internal static class Program
             RenderServerPublicBaseUrl = renderServerPublicBaseUrl;
         }
 
+        public string Driver { get; set; }
+        public bool LocalstoreUseCwd { get; set; }
+        public List<string> CommandStart { get; set; }
         public List<string> OnebotWsUrls { get; set; }
         public string OnebotAccessToken { get; set; }
         public List<string> OwnerIds { get; set; }
