@@ -219,18 +219,16 @@ internal static class Program
                 .Color(Color.Aquamarine1));
         AnsiConsole.Write(new Rule("[bold #7dd3fc]Installer Console[/]").RuleStyle("grey").Centered());
 
-        var infoTable = new Table()
-            .Border(TableBorder.Rounded)
-            .BorderColor(Color.Grey37)
-            .AddColumn("[bold #7dd3fc]环境[/]")
-            .AddColumn("[bold #7dd3fc]值[/]");
-        infoTable.AddRow("系统", Markup.Escape(GetCurrentOsName()));
-        infoTable.AddRow("架构", RuntimeInformation.ProcessArchitecture.ToString());
-        infoTable.AddRow("GitHub 代理", Markup.Escape(GetGithubProxyStatusText()));
-        infoTable.AddRow("运行目录", Markup.Escape(Directory.GetCurrentDirectory()));
+        var infoGrid = new Grid();
+        infoGrid.AddColumn(new GridColumn().NoWrap());
+        infoGrid.AddColumn();
+        infoGrid.AddRow(new Markup("[grey]系统[/]"), new Markup($"[white]{Markup.Escape(GetCurrentOsName())}[/]"));
+        infoGrid.AddRow(new Markup("[grey]架构[/]"), new Markup($"[white]{Markup.Escape(RuntimeInformation.ProcessArchitecture.ToString())}[/]"));
+        infoGrid.AddRow(new Markup("[grey]GitHub 代理[/]"), new Markup($"[white]{Markup.Escape(GetGithubProxyStatusText())}[/]"));
+        infoGrid.AddRow(new Markup("[grey]运行目录[/]"), new Markup($"[white]{Markup.Escape(Directory.GetCurrentDirectory())}[/]"));
 
         AnsiConsole.Write(
-            new Panel(infoTable)
+            new Panel(infoGrid)
                 .Header("[bold #93c5fd]欢迎使用[/]")
                 .Border(BoxBorder.Rounded)
                 .Padding(1, 0, 1, 0));
@@ -342,21 +340,18 @@ internal static class Program
 
         while (true)
         {
-            var table = new Table()
-                .Border(TableBorder.Rounded)
-                .BorderColor(Color.Grey37)
-                .AddColumn("[bold #7dd3fc]项目[/]")
-                .AddColumn("[bold #7dd3fc]值[/]");
-            table.AddRow("当前状态", Markup.Escape(GetGithubProxyStatusText()));
-            table.AddRow("默认代理站", Markup.Escape(BuiltinGithubProxySites[0]));
-            table.AddRow("预设数量", BuiltinGithubProxySites.Length.ToString());
+            var proxyGrid = new Grid();
+            proxyGrid.AddColumn(new GridColumn().NoWrap());
+            proxyGrid.AddColumn();
+            proxyGrid.AddRow(new Markup("[grey]当前状态[/]"), new Markup($"[white]{Markup.Escape(GetGithubProxyStatusText())}[/]"));
+            proxyGrid.AddRow(new Markup("[grey]默认代理站[/]"), new Markup($"[white]{Markup.Escape(BuiltinGithubProxySites[0])}[/]"));
+            proxyGrid.AddRow(new Markup("[grey]预设数量[/]"), new Markup($"[white]{BuiltinGithubProxySites.Length}[/]"));
 
             AnsiConsole.Write(
-                new Panel(table)
+                new Panel(proxyGrid)
                     .Header("[bold #93c5fd]代理配置[/]")
                     .Border(BoxBorder.Rounded)
-                    .BorderStyle(new Style(foreground: Color.Grey37))
-                    .Expand());
+                    .Padding(1, 0, 1, 0));
 
             var selected = AnsiConsole.Prompt(
                 new SelectionPrompt<string>()
@@ -1047,29 +1042,25 @@ internal static class Program
 
     private static void ShowCurrentConfig(EditableConfig config)
     {
-        var table = new Table()
-            .Border(TableBorder.Rounded)
-            .BorderColor(Color.Grey37)
-            .AddColumn("[bold #7dd3fc]配置项[/]")
-            .AddColumn("[bold #7dd3fc]当前值[/]");
-
-        table.AddRow("[#93c5fd]DRIVER[/]", Markup.Escape(config.Driver));
-        table.AddRow("[#93c5fd]LOCALSTORE_USE_CWD[/]", config.LocalstoreUseCwd ? "true" : "false");
-        table.AddRow("[#93c5fd]COMMAND_START[/]", Markup.Escape(ToEnvArrayLiteral(config.CommandStart)));
-        table.AddRow("[#93c5fd]ONEBOT_WS_URLS[/]", Markup.Escape(ToEnvArrayLiteral(config.OnebotWsUrls)));
-        table.AddRow("[#93c5fd]ONEBOT_ACCESS_TOKEN[/]", Markup.Escape(config.OnebotAccessToken));
-        table.AddRow("[#93c5fd]OWNER_ID[/]", Markup.Escape(ToEnvArrayLiteral(config.OwnerIds)));
-        table.AddRow("[#93c5fd]GROUP_ID[/]", Markup.Escape(ToEnvArrayLiteral(config.GroupIds)));
-        table.AddRow("[#93c5fd]RENDER_SERVER_HOST[/]", Markup.Escape(config.RenderServerHost));
-        table.AddRow("[#93c5fd]RENDER_SERVER_PORT[/]", config.RenderServerPort.ToString());
-        table.AddRow("[#93c5fd]RENDER_SERVER_PUBLIC_BASE_URL[/]", Markup.Escape(config.RenderServerPublicBaseUrl));
+        var configGrid = new Grid();
+        configGrid.AddColumn(new GridColumn().NoWrap());
+        configGrid.AddColumn();
+        configGrid.AddRow(new Markup("[grey]DRIVER[/]"), new Markup($"[white]{Markup.Escape(config.Driver)}[/]"));
+        configGrid.AddRow(new Markup("[grey]LOCALSTORE_USE_CWD[/]"), new Markup($"[white]{(config.LocalstoreUseCwd ? "true" : "false")}[/]"));
+        configGrid.AddRow(new Markup("[grey]COMMAND_START[/]"), new Markup($"[white]{Markup.Escape(ToEnvArrayLiteral(config.CommandStart))}[/]"));
+        configGrid.AddRow(new Markup("[grey]ONEBOT_WS_URLS[/]"), new Markup($"[white]{Markup.Escape(ToEnvArrayLiteral(config.OnebotWsUrls))}[/]"));
+        configGrid.AddRow(new Markup("[grey]ONEBOT_ACCESS_TOKEN[/]"), new Markup($"[white]{Markup.Escape(config.OnebotAccessToken)}[/]"));
+        configGrid.AddRow(new Markup("[grey]OWNER_ID[/]"), new Markup($"[white]{Markup.Escape(ToEnvArrayLiteral(config.OwnerIds))}[/]"));
+        configGrid.AddRow(new Markup("[grey]GROUP_ID[/]"), new Markup($"[white]{Markup.Escape(ToEnvArrayLiteral(config.GroupIds))}[/]"));
+        configGrid.AddRow(new Markup("[grey]RENDER_SERVER_HOST[/]"), new Markup($"[white]{Markup.Escape(config.RenderServerHost)}[/]"));
+        configGrid.AddRow(new Markup("[grey]RENDER_SERVER_PORT[/]"), new Markup($"[white]{config.RenderServerPort}[/]"));
+        configGrid.AddRow(new Markup("[grey]RENDER_SERVER_PUBLIC_BASE_URL[/]"), new Markup($"[white]{Markup.Escape(config.RenderServerPublicBaseUrl)}[/]"));
 
         AnsiConsole.Write(
-            new Panel(table)
+            new Panel(configGrid)
                 .Header("[bold #93c5fd]当前配置[/]")
                 .Border(BoxBorder.Rounded)
-                .BorderStyle(new Style(foreground: Color.Grey37))
-                .Expand());
+                .Padding(1, 0, 1, 0));
     }
 
     private static EditableConfig LoadEditableConfig(string envPath)
