@@ -13,6 +13,8 @@ internal static class Program
 {
     private const string PythonVersion = "3.14.3";
     private const string DefaultGithubProxyBaseUrl = "https://gh-proxy.org/";
+    private const string NextBotSourceZipUrl = "https://github.com/Arispex/next-bot/archive/refs/heads/main.zip";
+    private const string NextBotExtractedFolderName = "next-bot-main";
     private const string LatestReleaseMetadataUrl =
         "https://raw.githubusercontent.com/astral-sh/python-build-standalone/latest-release/latest-release.json";
 
@@ -32,7 +34,7 @@ internal static class Program
                     .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
                     .PageSize(10)
                     .MoreChoicesText("[grey](上下方向键选择，回车确认)[/]")
-                    .AddChoices("1. 一键安装", "2. 创建或修改配置文件", "0. 退出"));
+                    .AddChoices("1. 一键安装", "2. 配置管理", "0. 退出"));
 
             switch (selected)
             {
@@ -47,7 +49,7 @@ internal static class Program
                     }
 
                     break;
-                case "2. 创建或修改配置文件":
+                case "2. 配置管理":
                     try
                     {
                         RunConfigFileWizard();
@@ -78,6 +80,19 @@ internal static class Program
 
         Directory.CreateDirectory(cacheDirectory);
 
+        var sourceZipPath = Path.Combine(cacheDirectory, "next-bot-main.zip");
+        await RunWithStatusAsync(
+            "步骤 1/7 下载 NextBot...",
+            () => DownloadFileAsync(NextBotSourceZipUrl, sourceZipPath));
+
+        await RunWithStatusAsync(
+            "步骤 2/7 解压并同步到当前目录...",
+            () =>
+            {
+                DeployProjectSource(sourceZipPath, workingDirectory, cacheDirectory);
+                return Task.CompletedTask;
+            });
+
         if (Directory.Exists(installDirectory))
         {
             var overwrite = AnsiConsole.Confirm("检测到当前目录已存在 [green]python[/] 文件夹，是否覆盖？", false);
@@ -93,16 +108,16 @@ internal static class Program
         Directory.CreateDirectory(installDirectory);
 
         var archivePlan = await RunWithStatusAsync(
-            "步骤 1/5 解析可用的 Python 压缩包...",
+            "步骤 3/7 解析可用的 Python 压缩包...",
             () => ResolveArchivePlanAsync(PythonVersion));
         var archivePath = Path.Combine(cacheDirectory, archivePlan.FileName);
 
         await RunWithStatusAsync(
-            $"步骤 2/5 下载 {archivePlan.FileName}...",
+            $"步骤 4/7 下载 {archivePlan.FileName}...",
             () => DownloadFileAsync(archivePlan.Url, archivePath));
 
         await RunWithStatusAsync(
-            "步骤 3/5 解压 Python 到当前目录...",
+            "步骤 5/7 解压 Python 到当前目录...",
             () => ExtractArchiveAsync(archivePath, installDirectory));
 
         var pythonExecutable = FindPythonExecutable(installDirectory);
@@ -110,7 +125,7 @@ internal static class Program
             $"[grey]Python 可执行文件：[/][white]{Markup.Escape(Path.GetRelativePath(workingDirectory, pythonExecutable))}[/]");
 
         await RunWithStatusAsync(
-            "步骤 4/5 安装 uv 并执行 uv sync...",
+            "步骤 6/7 安装 uv 并执行 uv sync...",
             async () =>
             {
                 await RunProcessAsync(pythonExecutable, new[] { "-m", "ensurepip", "--upgrade" }, workingDirectory);
@@ -120,7 +135,7 @@ internal static class Program
             });
 
         var scriptPath = await RunWithStatusAsync(
-            "步骤 5/5 生成运行脚本...",
+            "步骤 7/7 生成运行脚本...",
             () => Task.FromResult(CreateRunScript(workingDirectory, pythonExecutable)));
 
         AnsiConsole.WriteLine();
@@ -150,7 +165,53 @@ internal static class Program
         }
 
         AnsiConsole.MarkupLine(
-            $"[yellow]你可以稍后在主菜单选择“2. 创建或修改配置文件”，然后再运行脚本：[/][bold]{Markup.Escape(Path.GetRelativePath(workingDirectory, scriptPath))}[/]");
+            $"[yellow]你可以稍后在主菜单选择“2. 配置管理”，然后再运行脚本：[/][bold]{Markup.Escape(Path.GetRelativePath(workingDirectory, scriptPath))}[/]");
+    }
+
+    private static void DeployProjectSource(string sourceZipPath, string workingDirectory, string cacheDirectory)
+    {
+        var tempExtractRoot = Path.Combine(cacheDirectory, $"src-extract-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempExtractRoot);
+
+        try
+        {
+            ZipFile.ExtractToDirectory(sourceZipPath, tempExtractRoot, true);
+            var extractedRoot = Path.Combine(tempExtractRoot, NextBotExtractedFolderName);
+
+            if (!Directory.Exists(extractedRoot))
+            {
+                throw new DirectoryNotFoundException($"未找到解压后的源码目录：{NextBotExtractedFolderName}");
+            }
+
+            MergeDirectoryIntoTarget(extractedRoot, workingDirectory);
+        }
+        finally
+        {
+            if (Directory.Exists(tempExtractRoot))
+            {
+                Directory.Delete(tempExtractRoot, true);
+            }
+        }
+    }
+
+    private static void MergeDirectoryIntoTarget(string sourceDirectory, string targetDirectory)
+    {
+        Directory.CreateDirectory(targetDirectory);
+
+        foreach (var filePath in Directory.EnumerateFiles(sourceDirectory))
+        {
+            var fileName = Path.GetFileName(filePath);
+            var targetPath = Path.Combine(targetDirectory, fileName);
+            File.Move(filePath, targetPath, true);
+        }
+
+        foreach (var subDirectory in Directory.EnumerateDirectories(sourceDirectory))
+        {
+            var name = Path.GetFileName(subDirectory);
+            var targetSubDirectory = Path.Combine(targetDirectory, name);
+            MergeDirectoryIntoTarget(subDirectory, targetSubDirectory);
+            Directory.Delete(subDirectory, true);
+        }
     }
 
     private static void ShowWelcomeScreen()
