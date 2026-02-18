@@ -29,6 +29,7 @@ internal static class Program
 
     private static async Task Main()
     {
+        await AutoSelectAvailableProxyAsync();
         ShowWelcomeScreen();
 
         while (true)
@@ -75,6 +76,33 @@ internal static class Program
 
             AnsiConsole.WriteLine();
         }
+    }
+
+    private static async Task AutoSelectAvailableProxyAsync()
+    {
+        await RunWithStatusAsync(
+            "测试代理站可用性...",
+            async () =>
+            {
+                for (var i = 0; i < BuiltinGithubProxySites.Length; i++)
+                {
+                    var rawSite = BuiltinGithubProxySites[i];
+                    if (!TryNormalizeProxyBaseUrl(rawSite, out var normalized))
+                    {
+                        continue;
+                    }
+
+                    if (!await IsProxyAvailableAsync(normalized))
+                    {
+                        continue;
+                    }
+
+                    ApplyProxyState(true, normalized, i == 0 ? "自动检测（默认）" : "自动检测");
+                    return;
+                }
+
+                ApplyProxyState(false, string.Empty, "自动检测");
+            });
     }
 
     private static async Task RunOneClickInstallAsync()
@@ -562,8 +590,17 @@ internal static class Program
 
     private static async Task<bool> UrlExistsAsync(string url)
     {
-        var requestUrl = ToProxiedGithubUrl(url);
+        return await IsUrlReachableAsync(ToProxiedGithubUrl(url));
+    }
 
+    private static async Task<bool> IsProxyAvailableAsync(string proxyBaseUrl)
+    {
+        var probeUrl = $"{proxyBaseUrl}{LatestReleaseMetadataUrl}";
+        return await IsUrlReachableAsync(probeUrl);
+    }
+
+    private static async Task<bool> IsUrlReachableAsync(string requestUrl)
+    {
         try
         {
             using var headRequest = new HttpRequestMessage(HttpMethod.Head, requestUrl);
