@@ -13,6 +13,10 @@ internal static class Program
     private const string PythonVersion = "3.14.3";
     private const string NextBotSourceZipUrl = "https://github.com/Arispex/next-bot/archive/refs/heads/main.zip";
     private const string NextBotExtractedFolderName = "next-bot-main";
+    private const string NapCatShellZipUrl =
+        "https://github.com/NapNeko/NapCatQQ/releases/download/v4.17.11/NapCat.Shell.zip";
+    private const string NapCatShellWindowsOneKeyZipUrl =
+        "https://github.com/NapNeko/NapCatQQ/releases/download/v4.17.11/NapCat.Shell.Windows.Node.zip";
     private const string LatestReleaseMetadataUrl =
         "https://raw.githubusercontent.com/astral-sh/python-build-standalone/latest-release/latest-release.json";
     private static readonly string[] BuiltinGithubProxySites =
@@ -41,7 +45,7 @@ internal static class Program
                     .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
                     .PageSize(10)
                     .MoreChoicesText("[grey](上下方向键选择，回车确认)[/]")
-                    .AddChoices("1. 安装 NextBot", "2. NextBot 配置管理", "3. 代理站管理", "0. 退出"));
+                    .AddChoices("1. 安装 NextBot", "2. NextBot 配置管理", "3. 安装 NapCat", "4. 代理站管理", "0. 退出"));
 
             switch (selected)
             {
@@ -67,7 +71,18 @@ internal static class Program
                     }
 
                     break;
-                case "3. 代理站管理":
+                case "3. 安装 NapCat":
+                    try
+                    {
+                        await RunNapCatInstallerAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        AnsiConsole.MarkupLine($"[red]NapCat 安装失败：[/]{Markup.Escape(ex.Message)}");
+                    }
+
+                    break;
+                case "4. 代理站管理":
                     RunProxyManager();
                     break;
                 case "0. 退出":
@@ -188,6 +203,81 @@ internal static class Program
         AnsiConsole.Write(
             new Panel(summaryGrid)
                 .Header("[bold #4ade80]安装完成[/]")
+                .Border(BoxBorder.Rounded)
+                .BorderStyle(new Style(foreground: Color.Green))
+                .Padding(1, 0, 1, 0));
+    }
+
+    private static async Task RunNapCatInstallerAsync()
+    {
+        ShowSectionTitle("安装 NapCat", "下载 NapCat 并解压到根目录 napcat 文件夹");
+        AnsiConsole.MarkupLine($"[grey]GitHub 代理：[/][white]{Markup.Escape(GetGithubProxyStatusText())}[/]");
+        AnsiConsole.WriteLine();
+
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            AnsiConsole.MarkupLine("[yellow]当前仅实现 Windows 安装子菜单。[/]");
+            return;
+        }
+
+        var selected = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("[bold #7dd3fc]请选择 NapCat 安装包[/]")
+                .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
+                .AddChoices("1. NapCat.Shell", "2. NapCat.Shell.Windows.OneKey", "0. 返回"));
+
+        string? packageUrl = selected switch
+        {
+            "1. NapCat.Shell" => NapCatShellZipUrl,
+            "2. NapCat.Shell.Windows.OneKey" => NapCatShellWindowsOneKeyZipUrl,
+            _ => null
+        };
+
+        if (string.IsNullOrWhiteSpace(packageUrl))
+        {
+            AnsiConsole.MarkupLine("[yellow]已返回主菜单。[/]");
+            return;
+        }
+
+        var workingDirectory = Directory.GetCurrentDirectory();
+        var cacheDirectory = Path.Combine(workingDirectory, ".installer-cache");
+        var targetDirectory = Path.Combine(workingDirectory, "napcat");
+        Directory.CreateDirectory(cacheDirectory);
+
+        if (Directory.Exists(targetDirectory))
+        {
+            var overwrite = AnsiConsole.Confirm("检测到 [green]napcat[/] 文件夹已存在，是否覆盖？", false);
+            if (!overwrite)
+            {
+                AnsiConsole.MarkupLine("[yellow]已取消安装。[/]");
+                return;
+            }
+
+            Directory.Delete(targetDirectory, true);
+        }
+
+        Directory.CreateDirectory(targetDirectory);
+
+        var archiveFileName = Path.GetFileName(new Uri(packageUrl).AbsolutePath);
+        var archivePath = Path.Combine(cacheDirectory, archiveFileName);
+
+        await RunWithStatusAsync(
+            $"步骤 1/2 下载 {archiveFileName}...",
+            () => DownloadFileAsync(packageUrl, archivePath));
+
+        await RunWithStatusAsync(
+            "步骤 2/2 解压 NapCat 到当前目录...",
+            () => ExtractArchiveAsync(archivePath, targetDirectory));
+
+        var summaryGrid = new Grid();
+        summaryGrid.AddColumn(new GridColumn().NoWrap());
+        summaryGrid.AddColumn();
+        summaryGrid.AddRow(new Markup("[grey]安装目录[/]"), new Markup($"[white]{Markup.Escape(targetDirectory)}[/]"));
+        summaryGrid.AddRow(new Markup("[grey]安装包[/]"), new Markup($"[white]{Markup.Escape(archiveFileName)}[/]"));
+
+        AnsiConsole.Write(
+            new Panel(summaryGrid)
+                .Header("[bold #4ade80]NapCat 安装完成[/]")
                 .Border(BoxBorder.Rounded)
                 .BorderStyle(new Style(foreground: Color.Green))
                 .Padding(1, 0, 1, 0));
