@@ -264,19 +264,25 @@ internal static class Program
         var archivePath = Path.Combine(cacheDirectory, archiveFileName);
 
         await RunWithStatusAsync(
-            $"步骤 1/2 下载 {archiveFileName}...",
+            $"步骤 1/3 下载 {archiveFileName}...",
             () => DownloadFileAsync(packageUrl, archivePath));
 
         await RunWithStatusAsync(
-            "步骤 2/2 解压 NapCat 到 napcat 目录...",
+            "步骤 2/3 解压 NapCat 到 napcat 目录...",
             () => ExtractArchiveAsync(archivePath, targetDirectory));
         DeleteFileIfExists(archivePath);
+
+        var scriptPath = await RunWithStatusAsync(
+            "步骤 3/3 生成 NapCat 启动脚本...",
+            () => Task.FromResult(CreateNapCatRunScript(workingDirectory, selected)));
 
         var summaryGrid = new Grid();
         summaryGrid.AddColumn(new GridColumn().NoWrap());
         summaryGrid.AddColumn();
         summaryGrid.AddRow(new Markup("[grey]安装目录[/]"), new Markup($"[white]{Markup.Escape(targetDirectory)}[/]"));
         summaryGrid.AddRow(new Markup("[grey]安装方式[/]"), new Markup($"[white]{Markup.Escape(selected)}[/]"));
+        summaryGrid.AddRow(new Markup("[grey]启动脚本[/]"),
+            new Markup($"[white]{Markup.Escape(Path.GetRelativePath(workingDirectory, scriptPath))}[/]"));
 
         AnsiConsole.Write(
             new Panel(summaryGrid)
@@ -959,6 +965,32 @@ internal static class Program
             UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
 
         return unixScriptPath;
+    }
+
+    private static string CreateNapCatRunScript(string workingDirectory, string installMode)
+    {
+        var scriptPath = Path.Combine(workingDirectory, "run_napcat.bat");
+        var launcherRelativePath = installMode switch
+        {
+            "1. NapCat.Shell" => IsWindows11() ? "napcat\\launcher.bat" : "napcat\\launcher-win10.bat",
+            "2. NapCat.Shell.Windows.OneKey" => "napcat\\napcat.bat",
+            _ => throw new NotSupportedException($"未知的 NapCat 安装方式：{installMode}")
+        };
+
+        var script =
+            "@echo off\r\n" +
+            "setlocal\r\n" +
+            "cd /d \"%~dp0\"\r\n" +
+            $"call \"{launcherRelativePath}\"\r\n";
+
+        File.WriteAllText(scriptPath, script, new UTF8Encoding(false));
+        return scriptPath;
+    }
+
+    private static bool IsWindows11()
+    {
+        return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
+               Environment.OSVersion.Version.Build >= 22000;
     }
 
     private static void RunConfigFileWizard()
