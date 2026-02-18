@@ -224,7 +224,7 @@ internal static class Program
 
         var selected = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
-                .Title("[bold #7dd3fc]请选择 NapCat 安装包[/]")
+                .Title("[bold #7dd3fc]请选择 NapCat 安装方式[/]")
                 .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
                 .AddChoices("1. NapCat.Shell", "2. NapCat.Shell.Windows.OneKey", "0. 返回"));
 
@@ -268,7 +268,7 @@ internal static class Program
             () => DownloadFileAsync(packageUrl, archivePath));
 
         await RunWithStatusAsync(
-            "步骤 2/2 解压 NapCat 到当前目录...",
+            "步骤 2/2 解压 NapCat 到 napcat 目录...",
             () => ExtractArchiveAsync(archivePath, targetDirectory));
         DeleteFileIfExists(archivePath);
 
@@ -276,7 +276,7 @@ internal static class Program
         summaryGrid.AddColumn(new GridColumn().NoWrap());
         summaryGrid.AddColumn();
         summaryGrid.AddRow(new Markup("[grey]安装目录[/]"), new Markup($"[white]{Markup.Escape(targetDirectory)}[/]"));
-        summaryGrid.AddRow(new Markup("[grey]安装包[/]"), new Markup($"[white]{Markup.Escape(archiveFileName)}[/]"));
+        summaryGrid.AddRow(new Markup("[grey]安装方式[/]"), new Markup($"[white]{Markup.Escape(selected)}[/]"));
 
         AnsiConsole.Write(
             new Panel(summaryGrid)
