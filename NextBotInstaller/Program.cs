@@ -144,6 +144,7 @@ internal static class Program
                 DeployProjectSource(sourceZipPath, workingDirectory, cacheDirectory);
                 return Task.CompletedTask;
             });
+        DeleteFileIfExists(sourceZipPath);
 
         if (Directory.Exists(installDirectory))
         {
@@ -171,6 +172,7 @@ internal static class Program
         await RunWithStatusAsync(
             "步骤 5/7 解压 Python 到当前目录...",
             () => ExtractArchiveAsync(archivePath, installDirectory));
+        DeleteFileIfExists(archivePath);
 
         var pythonExecutable = FindPythonExecutable(installDirectory);
         AnsiConsole.MarkupLine(
@@ -268,6 +270,7 @@ internal static class Program
         await RunWithStatusAsync(
             "步骤 2/2 解压 NapCat 到当前目录...",
             () => ExtractArchiveAsync(archivePath, targetDirectory));
+        DeleteFileIfExists(archivePath);
 
         var summaryGrid = new Grid();
         summaryGrid.AddColumn(new GridColumn().NoWrap());
@@ -732,6 +735,14 @@ internal static class Program
         await using var outputStream = File.Create(outputPath);
         await using var networkStream = await response.Content.ReadAsStreamAsync();
         await networkStream.CopyToAsync(outputStream);
+    }
+
+    private static void DeleteFileIfExists(string path)
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
     }
 
     private static async Task ExtractArchiveAsync(string archivePath, string targetDirectory)
