@@ -14,9 +14,9 @@ internal static class Program
     private const string NextBotSourceZipUrl = "https://github.com/Arispex/next-bot/archive/refs/heads/main.zip";
     private const string NextBotExtractedFolderName = "next-bot-main";
     private const string NapCatShellZipUrl =
-        "https://github.com/NapNeko/NapCatQQ/releases/download/v4.17.11/NapCat.Shell.zip";
+        "https://github.com/NapNeko/NapCatQQ/releases/latest/download/NapCat.Shell.zip";
     private const string NapCatShellWindowsOneKeyZipUrl =
-        "https://github.com/NapNeko/NapCatQQ/releases/download/v4.17.11/NapCat.Shell.Windows.Node.zip";
+        "https://github.com/NapNeko/NapCatQQ/releases/latest/download/NapCat.Shell.Windows.Node.zip";
     private const string LatestReleaseMetadataUrl =
         "https://raw.githubusercontent.com/astral-sh/python-build-standalone/latest-release/latest-release.json";
     private static readonly string[] BuiltinGithubProxySites =
