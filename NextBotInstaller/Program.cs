@@ -189,7 +189,7 @@ internal static class Program
             });
 
         var scriptPath = await RunWithStatusAsync(
-            "步骤 7/7 生成运行脚本...",
+            "步骤 7/7 生成启动脚本...",
             () => Task.FromResult(CreateRunScript(workingDirectory, pythonExecutable)));
 
         AnsiConsole.WriteLine();
