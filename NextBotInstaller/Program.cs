@@ -1255,8 +1255,8 @@ internal static class Program
             var unixScript =
                 "#!/usr/bin/env bash\n" +
                 "set -euo pipefail\n" +
-                "cd \"$(dirname \"$0\")\"\n" +
-                "bash \"napcat/launcher.sh\"\n";
+                "cd \"$(dirname \"$0\")/napcat\"\n" +
+                "bash \"./launcher.sh\"\n";
 
             File.WriteAllText(unixScriptPath, unixScript, new UTF8Encoding(false));
             File.SetUnixFileMode(unixScriptPath,
