@@ -226,6 +226,9 @@ internal static class Program
                 .Border(BoxBorder.Rounded)
                 .BorderStyle(new Style(foreground: Color.Green))
                 .Padding(1, 0, 1, 0));
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine(
+            $"[green]运行 {Markup.Escape(Path.GetFileName(scriptPath))} 即可运行 NextBot！[/]");
     }
 
     private static async Task RunNextBotUpdateAsync()
@@ -291,8 +294,6 @@ internal static class Program
         summaryGrid.AddColumn();
         summaryGrid.AddRow(new Markup("[grey]更新目录[/]"), new Markup($"[white]{Markup.Escape(workingDirectory)}[/]"));
         summaryGrid.AddRow(new Markup("[grey]Python 目录[/]"), new Markup($"[white]{Markup.Escape(installDirectory)}[/]"));
-        summaryGrid.AddRow(new Markup("[grey]保留项[/]"),
-            new Markup($"[white]{Markup.Escape("python, napcat, .env, .webui_auth.json, app.db, run_bot.bat/run_bot.sh, run_napcat.bat/run_napcat.sh")}[/]"));
 
         AnsiConsole.Write(
             new Panel(summaryGrid)
