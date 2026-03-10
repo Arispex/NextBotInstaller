@@ -448,7 +448,7 @@ internal static class Program
         summaryGrid.AddColumn(new GridColumn().NoWrap());
         summaryGrid.AddColumn();
         summaryGrid.AddRow(new Markup("[grey]安装目录[/]"), new Markup($"[white]{Markup.Escape(targetDirectory)}[/]"));
-        summaryGrid.AddRow(new Markup("[grey]安装方式[/]"), new Markup("[white]Linux install.sh[/]"));
+        summaryGrid.AddRow(new Markup("[grey]安装方式[/]"), new Markup("[white]NapCat.Linux.Launcher[/]"));
         summaryGrid.AddRow(new Markup("[grey]启动脚本[/]"),
             new Markup($"[white]{Markup.Escape(Path.GetRelativePath(workingDirectory, scriptPath))}[/]"));
 
