@@ -293,6 +293,13 @@ internal static class Program
     [SupportedOSPlatform("linux")]
     private static async Task RunNapCatLinuxInstallerAsync()
     {
+        if (!IsRunningAsRoot())
+        {
+            AnsiConsole.MarkupLine("[yellow]Linux 安装 NapCat 需要 root 权限。[/]");
+            AnsiConsole.MarkupLine("[yellow]请使用 sudo 运行此程序，或切换到 root 用户后再执行。[/]");
+            return;
+        }
+
         var workingDirectory = Directory.GetCurrentDirectory();
         var targetDirectory = Path.Combine(workingDirectory, "napcat");
 
@@ -1122,6 +1129,15 @@ internal static class Program
         return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
                Environment.OSVersion.Version.Build >= 22000;
     }
+
+    [SupportedOSPlatform("linux")]
+    private static bool IsRunningAsRoot()
+    {
+        return geteuid() == 0;
+    }
+
+    [DllImport("libc")]
+    private static extern uint geteuid();
 
     private static LatestReleaseMetadata? ParseLatestReleaseMetadata(string json)
     {
