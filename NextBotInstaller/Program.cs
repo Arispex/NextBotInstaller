@@ -389,6 +389,9 @@ internal static class Program
                 .Border(BoxBorder.Rounded)
                 .BorderStyle(new Style(foreground: Color.Green))
                 .Padding(1, 0, 1, 0));
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine(
+            $"[green]运行 {Markup.Escape(Path.GetFileName(scriptPath))} 即可启动 NapCat！[/]");
     }
 
     [SupportedOSPlatform("linux")]
@@ -456,6 +459,9 @@ internal static class Program
                 .Border(BoxBorder.Rounded)
                 .BorderStyle(new Style(foreground: Color.Green))
                 .Padding(1, 0, 1, 0));
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine(
+            $"[green]运行 {Markup.Escape(Path.GetFileName(scriptPath))} 即可启动 NapCat！[/]");
     }
 
     private static void DeployProjectSource(string sourceZipPath, string workingDirectory, string cacheDirectory)
