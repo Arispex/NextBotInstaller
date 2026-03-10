@@ -4,6 +4,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Text;
 using System.Text.Json;
 using Spectre.Console;
@@ -17,6 +18,8 @@ internal static class Program
         "https://github.com/NapNeko/NapCatQQ/releases/latest/download/NapCat.Shell.zip";
     private const string NapCatShellWindowsOneKeyZipUrl =
         "https://github.com/NapNeko/NapCatQQ/releases/latest/download/NapCat.Shell.Windows.Node.zip";
+    private const string NapCatLinuxInstallScriptUrl =
+        "https://raw.githubusercontent.com/NapNeko/napcat-linux-installer/refs/heads/main/install.sh";
     private const string LatestReleaseMetadataUrl =
         "https://raw.githubusercontent.com/astral-sh/python-build-standalone/latest-release/latest-release.json";
     private static readonly string[] BuiltinGithubProxySites =
@@ -205,9 +208,15 @@ internal static class Program
         AnsiConsole.MarkupLine($"[grey]GitHub 代理：[/][white]{Markup.Escape(GetGithubProxyStatusText())}[/]");
         AnsiConsole.WriteLine();
 
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            await RunNapCatLinuxInstallerAsync();
+            return;
+        }
+
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            AnsiConsole.MarkupLine("[yellow]当前仅实现 Windows 安装子菜单。[/]");
+            AnsiConsole.MarkupLine("[yellow]当前仅实现 Windows 和 Linux 安装流程。[/]");
             return;
         }
 
@@ -273,6 +282,66 @@ internal static class Program
         summaryGrid.AddRow(new Markup("[grey]启动脚本[/]"),
             new Markup($"[white]{Markup.Escape(Path.GetRelativePath(workingDirectory, scriptPath))}[/]"));
 
+        AnsiConsole.Write(
+            new Panel(summaryGrid)
+                .Header("[bold #4ade80]NapCat 安装完成[/]")
+                .Border(BoxBorder.Rounded)
+                .BorderStyle(new Style(foreground: Color.Green))
+                .Padding(1, 0, 1, 0));
+    }
+
+    [SupportedOSPlatform("linux")]
+    private static async Task RunNapCatLinuxInstallerAsync()
+    {
+        var workingDirectory = Directory.GetCurrentDirectory();
+        var targetDirectory = Path.Combine(workingDirectory, "napcat");
+
+        if (Directory.Exists(targetDirectory))
+        {
+            var overwrite = AnsiConsole.Confirm("检测到 [green]napcat[/] 文件夹已存在，是否覆盖？", false);
+            if (!overwrite)
+            {
+                AnsiConsole.MarkupLine("[yellow]已取消安装。[/]");
+                return;
+            }
+
+            Directory.Delete(targetDirectory, true);
+        }
+
+        Directory.CreateDirectory(targetDirectory);
+
+        var installScriptPath = Path.Combine(targetDirectory, "install.sh");
+        await RunWithStatusAsync(
+            "步骤 1/3 下载 Linux 安装脚本...",
+            () => DownloadFileAsync(NapCatLinuxInstallScriptUrl, installScriptPath));
+
+        File.SetUnixFileMode(installScriptPath,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+            UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+            UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[grey]步骤 2/3 执行 Linux 安装脚本...[/]");
+        AnsiConsole.Write(
+            new Rule("[grey]NapCat 安装日志[/]")
+                .RuleStyle("grey")
+                .LeftJustified());
+
+        await RunProcessWithLiveOutputAsync("bash", new[] { "install.sh" }, targetDirectory);
+
+        var scriptPath = await RunWithStatusAsync(
+            "步骤 3/3 生成 NapCat 启动脚本...",
+            () => Task.FromResult(CreateNapCatRunScript(workingDirectory, "linux")));
+
+        var summaryGrid = new Grid();
+        summaryGrid.AddColumn(new GridColumn().NoWrap());
+        summaryGrid.AddColumn();
+        summaryGrid.AddRow(new Markup("[grey]安装目录[/]"), new Markup($"[white]{Markup.Escape(targetDirectory)}[/]"));
+        summaryGrid.AddRow(new Markup("[grey]安装方式[/]"), new Markup("[white]Linux install.sh[/]"));
+        summaryGrid.AddRow(new Markup("[grey]启动脚本[/]"),
+            new Markup($"[white]{Markup.Escape(Path.GetRelativePath(workingDirectory, scriptPath))}[/]"));
+
+        AnsiConsole.WriteLine();
         AnsiConsole.Write(
             new Panel(summaryGrid)
                 .Header("[bold #4ade80]NapCat 安装完成[/]")
@@ -907,6 +976,43 @@ internal static class Program
         }
     }
 
+    private static async Task RunProcessWithLiveOutputAsync(string fileName, IReadOnlyList<string> args, string workingDirectory)
+    {
+        var info = new ProcessStartInfo
+        {
+            FileName = fileName,
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        foreach (var arg in args)
+        {
+            info.ArgumentList.Add(arg);
+        }
+
+        using var process = Process.Start(info);
+        if (process is null)
+        {
+            throw new InvalidOperationException("进程启动失败。");
+        }
+
+        var outputBuffer = new StringBuilder();
+        var stdOutTask = ReadBufferAndForwardAsync(process.StandardOutput, outputBuffer);
+        var stdErrTask = ReadBufferAndForwardAsync(process.StandardError, outputBuffer);
+
+        await Task.WhenAll(stdOutTask, stdErrTask, process.WaitForExitAsync());
+
+        if (process.ExitCode != 0)
+        {
+            var commandPreview = $"{fileName} {string.Join(' ', args)}";
+            throw new InvalidOperationException(
+                $"命令执行失败（exit code: {process.ExitCode}）: {commandPreview}\n{outputBuffer}");
+        }
+    }
+
     private static async Task ReadAndBufferAsync(StreamReader reader, StringBuilder outputBuffer)
     {
         while (await reader.ReadLineAsync() is { } line)
@@ -915,6 +1021,19 @@ internal static class Program
             {
                 outputBuffer.AppendLine(line);
             }
+        }
+    }
+
+    private static async Task ReadBufferAndForwardAsync(StreamReader reader, StringBuilder outputBuffer)
+    {
+        while (await reader.ReadLineAsync() is { } line)
+        {
+            lock (outputBuffer)
+            {
+                outputBuffer.AppendLine(line);
+            }
+
+            AnsiConsole.WriteLine(line);
         }
     }
 
@@ -958,6 +1077,28 @@ internal static class Program
 
     private static string CreateNapCatRunScript(string workingDirectory, string installMode)
     {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            if (!string.Equals(installMode, "linux", StringComparison.Ordinal))
+            {
+                throw new NotSupportedException($"未知的 NapCat 安装方式：{installMode}");
+            }
+
+            var unixScriptPath = Path.Combine(workingDirectory, "run_napcat");
+            var unixScript =
+                "#!/usr/bin/env bash\n" +
+                "set -euo pipefail\n" +
+                "cd \"$(dirname \"$0\")\"\n" +
+                "bash \"napcat/launcher.sh\"\n";
+
+            File.WriteAllText(unixScriptPath, unixScript, new UTF8Encoding(false));
+            File.SetUnixFileMode(unixScriptPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            return unixScriptPath;
+        }
+
         var scriptPath = Path.Combine(workingDirectory, "run_napcat.bat");
         var launcherRelativePath = installMode switch
         {
