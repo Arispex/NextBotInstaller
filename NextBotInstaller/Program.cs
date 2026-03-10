@@ -30,6 +30,20 @@ internal static class Program
         "https://cdn.gh-proxy.org/",
         "https://edgeone.gh-proxy.org/"
     };
+    private static readonly HashSet<string> NextBotUpdateProtectedDirectories = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "python",
+        "napcat"
+    };
+    private static readonly HashSet<string> NextBotUpdateProtectedFiles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".env",
+        "app.db",
+        "run_bot.bat",
+        "run_bot.sh",
+        "run_napcat.bat",
+        "run_napcat.sh"
+    };
 
     private static readonly GithubProxyState GithubProxy = CreateDefaultGithubProxyState();
     private static readonly HttpClient Http = CreateHttpClient();
@@ -48,7 +62,7 @@ internal static class Program
                     .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
                     .PageSize(10)
                     .MoreChoicesText("[grey](上下方向键选择，回车确认)[/]")
-                    .AddChoices("1. 安装 NextBot", "2. 安装 NapCat", "3. 代理站管理", "0. 退出"));
+                    .AddChoices("1. 安装 NextBot", "2. 更新 NextBot", "3. 安装 NapCat", "4. 代理站管理", "0. 退出"));
 
             switch (selected)
             {
@@ -63,7 +77,18 @@ internal static class Program
                     }
 
                     break;
-                case "2. 安装 NapCat":
+                case "2. 更新 NextBot":
+                    try
+                    {
+                        await RunNextBotUpdateAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        AnsiConsole.MarkupLine($"[red]更新失败：[/]{Markup.Escape(ex.Message)}");
+                    }
+
+                    break;
+                case "3. 安装 NapCat":
                     try
                     {
                         await RunNapCatInstallerAsync();
@@ -74,7 +99,7 @@ internal static class Program
                     }
 
                     break;
-                case "3. 代理站管理":
+                case "4. 代理站管理":
                     RunProxyManager();
                     break;
                 case "0. 退出":
@@ -197,6 +222,80 @@ internal static class Program
         AnsiConsole.Write(
             new Panel(summaryGrid)
                 .Header("[bold #4ade80]安装完成[/]")
+                .Border(BoxBorder.Rounded)
+                .BorderStyle(new Style(foreground: Color.Green))
+                .Padding(1, 0, 1, 0));
+    }
+
+    private static async Task RunNextBotUpdateAsync()
+    {
+        ShowSectionTitle("更新 NextBot", "清理非保留内容、同步最新源码并执行 uv sync");
+        AnsiConsole.MarkupLine($"[grey]GitHub 代理：[/][white]{Markup.Escape(GetGithubProxyStatusText())}[/]");
+        AnsiConsole.WriteLine();
+
+        var workingDirectory = Directory.GetCurrentDirectory();
+        var cacheDirectory = Path.Combine(workingDirectory, ".installer-cache");
+        var installDirectory = Path.Combine(workingDirectory, "python");
+        Directory.CreateDirectory(cacheDirectory);
+
+        if (!Directory.Exists(installDirectory))
+        {
+            throw new InvalidOperationException("未找到 python 环境，请先执行“安装 NextBot”。");
+        }
+
+        var pythonExecutable = FindPythonExecutable(installDirectory);
+        var sourceZipPath = Path.Combine(cacheDirectory, "next-bot-main.zip");
+
+        await RunWithStatusAsync(
+            "步骤 1/5 下载 NextBot...",
+            () => DownloadFileAsync(NextBotSourceZipUrl, sourceZipPath));
+
+        await RunWithStatusAsync(
+            "步骤 2/5 清理旧文件并同步源码...",
+            () =>
+            {
+                UpdateProjectSource(sourceZipPath, workingDirectory, cacheDirectory);
+                return Task.CompletedTask;
+            });
+        DeleteFileIfExists(sourceZipPath);
+
+        await RunWithStatusAsync(
+            "步骤 3/5 校验 Python 环境...",
+            () =>
+            {
+                if (!File.Exists(pythonExecutable))
+                {
+                    throw new FileNotFoundException("未找到可用的 Python 可执行文件，请先执行“安装 NextBot”。");
+                }
+
+                return Task.CompletedTask;
+            });
+
+        await RunWithStatusAsync(
+            "步骤 4/5 安装 uv 并执行 uv sync...",
+            async () =>
+            {
+                await RunProcessAsync(pythonExecutable, new[] { "-m", "ensurepip", "--upgrade" }, workingDirectory);
+                await RunProcessAsync(pythonExecutable, new[] { "-m", "pip", "install", "--upgrade", "pip", "uv" },
+                    workingDirectory);
+                await RunProcessAsync(pythonExecutable, new[] { "-m", "uv", "sync" }, workingDirectory);
+            });
+
+        await RunWithStatusAsync(
+            "步骤 5/5 完成更新...",
+            () => Task.CompletedTask);
+
+        var summaryGrid = new Grid();
+        summaryGrid.AddColumn(new GridColumn().NoWrap());
+        summaryGrid.AddColumn();
+        summaryGrid.AddRow(new Markup("[grey]更新目录[/]"), new Markup($"[white]{Markup.Escape(workingDirectory)}[/]"));
+        summaryGrid.AddRow(new Markup("[grey]Python 目录[/]"), new Markup($"[white]{Markup.Escape(installDirectory)}[/]"));
+        summaryGrid.AddRow(new Markup("[grey]保留项[/]"),
+            new Markup($"[white]{Markup.Escape("python, napcat, .env, app.db, run_bot.bat/run_bot.sh, run_napcat.bat/run_napcat.sh")}[/]"));
+
+        AnsiConsole.Write(
+            new Panel(summaryGrid)
+                .Header("[bold #4ade80]更新完成[/]")
                 .Border(BoxBorder.Rounded)
                 .BorderStyle(new Style(foreground: Color.Green))
                 .Padding(1, 0, 1, 0));
@@ -380,6 +479,67 @@ internal static class Program
             {
                 Directory.Delete(tempExtractRoot, true);
             }
+        }
+    }
+
+    private static void UpdateProjectSource(string sourceZipPath, string workingDirectory, string cacheDirectory)
+    {
+        var tempExtractRoot = Path.Combine(cacheDirectory, $"src-update-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempExtractRoot);
+
+        try
+        {
+            ZipFile.ExtractToDirectory(sourceZipPath, tempExtractRoot, true);
+            var extractedRoot = Path.Combine(tempExtractRoot, NextBotExtractedFolderName);
+
+            if (!Directory.Exists(extractedRoot))
+            {
+                throw new DirectoryNotFoundException($"未找到解压后的源码目录：{NextBotExtractedFolderName}");
+            }
+
+            CleanupWorkingDirectoryForUpdate(workingDirectory, cacheDirectory);
+            MergeDirectoryIntoTarget(extractedRoot, workingDirectory);
+        }
+        finally
+        {
+            if (Directory.Exists(tempExtractRoot))
+            {
+                Directory.Delete(tempExtractRoot, true);
+            }
+        }
+    }
+
+    private static void CleanupWorkingDirectoryForUpdate(string workingDirectory, string cacheDirectory)
+    {
+        var currentProcessPath = Environment.ProcessPath;
+        var protectedProcessFileName =
+            currentProcessPath is not null &&
+            string.Equals(Path.GetDirectoryName(currentProcessPath), workingDirectory, StringComparison.OrdinalIgnoreCase)
+                ? Path.GetFileName(currentProcessPath)
+                : null;
+
+        foreach (var directoryPath in Directory.EnumerateDirectories(workingDirectory))
+        {
+            var name = Path.GetFileName(directoryPath);
+            if (string.Equals(directoryPath, cacheDirectory, StringComparison.OrdinalIgnoreCase) ||
+                NextBotUpdateProtectedDirectories.Contains(name))
+            {
+                continue;
+            }
+
+            Directory.Delete(directoryPath, true);
+        }
+
+        foreach (var filePath in Directory.EnumerateFiles(workingDirectory))
+        {
+            var name = Path.GetFileName(filePath);
+            if (NextBotUpdateProtectedFiles.Contains(name) ||
+                string.Equals(name, protectedProcessFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            File.Delete(filePath);
         }
     }
 
@@ -1091,7 +1251,7 @@ internal static class Program
                 throw new NotSupportedException($"未知的 NapCat 安装方式：{installMode}");
             }
 
-            var unixScriptPath = Path.Combine(workingDirectory, "run_napcat");
+            var unixScriptPath = Path.Combine(workingDirectory, "run_napcat.sh");
             var unixScript =
                 "#!/usr/bin/env bash\n" +
                 "set -euo pipefail\n" +
