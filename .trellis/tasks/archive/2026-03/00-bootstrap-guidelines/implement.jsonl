@@ -1,0 +1,12 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "/Users/arispex/RiderProjects/NextBotInstaller/.trellis/spec/backend/directory-structure.md", "reason": "Document actual .NET CLI project structure"}
+{"file": "/Users/arispex/RiderProjects/NextBotInstaller/.trellis/spec/backend/error-handling.md", "reason": "Document actual exception and console feedback patterns"}
+{"file": "/Users/arispex/RiderProjects/NextBotInstaller/.trellis/spec/backend/logging-guidelines.md", "reason": "Document current runtime output and logging expectations"}
+{"file": "/Users/arispex/RiderProjects/NextBotInstaller/.trellis/spec/backend/quality-guidelines.md", "reason": "Document build and code quality expectations"}
+{"file": "/Users/arispex/RiderProjects/NextBotInstaller/.trellis/spec/frontend/directory-structure.md", "reason": "Document Spectre.Console UI layout as frontend equivalent"}
+{"file": "/Users/arispex/RiderProjects/NextBotInstaller/.trellis/spec/frontend/component-guidelines.md", "reason": "Document terminal UI composition patterns"}
+{"file": "/Users/arispex/RiderProjects/NextBotInstaller/.trellis/spec/frontend/state-management.md", "reason": "Document runtime state and selection flow patterns"}
+{"file": "/Users/arispex/RiderProjects/NextBotInstaller/.trellis/spec/frontend/type-safety.md", "reason": "Document nullable, record, and helper signature patterns"}
+{"file": "/Users/arispex/RiderProjects/NextBotInstaller/.trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Reference cross-layer thinking for UI plus IO orchestration"}
