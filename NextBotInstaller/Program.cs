@@ -152,11 +152,11 @@ internal static class Program
 
         var sourceZipPath = Path.Combine(cacheDirectory, "next-bot-main.zip");
         await RunWithStatusAsync(
-            "步骤 1/7 下载 NextBot...",
+            "步骤 1/8 下载 NextBot...",
             () => DownloadFileAsync(NextBotSourceZipUrl, sourceZipPath));
 
         await RunWithStatusAsync(
-            "步骤 2/7 解压并同步到当前目录...",
+            "步骤 2/8 解压并同步到当前目录...",
             () =>
             {
                 DeployProjectSource(sourceZipPath, workingDirectory, cacheDirectory);
@@ -179,16 +179,16 @@ internal static class Program
         Directory.CreateDirectory(installDirectory);
 
         var archivePlan = await RunWithStatusAsync(
-            "步骤 3/7 解析可用的 Python 压缩包...",
+            "步骤 3/8 解析可用的 Python 压缩包...",
             () => ResolveArchivePlanAsync(PythonVersion));
         var archivePath = Path.Combine(cacheDirectory, archivePlan.FileName);
 
         await RunWithStatusAsync(
-            $"步骤 4/7 下载 {archivePlan.FileName}...",
+            $"步骤 4/8 下载 {archivePlan.FileName}...",
             () => DownloadFileAsync(archivePlan.Url, archivePath));
 
         await RunWithStatusAsync(
-            "步骤 5/7 解压 Python 到当前目录...",
+            "步骤 5/8 解压 Python 到当前目录...",
             () => ExtractArchiveAsync(archivePath, installDirectory));
         DeleteFileIfExists(archivePath);
 
@@ -197,7 +197,7 @@ internal static class Program
             $"[grey]Python 可执行文件：[/][white]{Markup.Escape(Path.GetRelativePath(workingDirectory, pythonExecutable))}[/]");
 
         await RunWithStatusAsync(
-            "步骤 6/7 安装 uv 并执行 uv sync...",
+            "步骤 6/8 安装 uv 并执行 uv sync...",
             async () =>
             {
                 await RunProcessAsync(pythonExecutable, new[] { "-m", "ensurepip", "--upgrade" }, workingDirectory);
@@ -206,8 +206,15 @@ internal static class Program
                 await RunProcessAsync(pythonExecutable, new[] { "-m", "uv", "sync" }, workingDirectory);
             });
 
+        await RunWithStatusAsync(
+            "步骤 7/8 安装 Playwright Chromium...",
+            () => RunProcessAsync(
+                pythonExecutable,
+                new[] { "-m", "uv", "run", "python", "-m", "playwright", "install", "chromium" },
+                workingDirectory));
+
         var scriptPath = await RunWithStatusAsync(
-            "步骤 7/7 生成启动脚本...",
+            "步骤 8/8 生成启动脚本...",
             () => Task.FromResult(CreateRunScript(workingDirectory, pythonExecutable)));
 
         AnsiConsole.WriteLine();
