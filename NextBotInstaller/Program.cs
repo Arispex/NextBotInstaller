@@ -12,6 +12,7 @@ using Spectre.Console;
 internal static class Program
 {
     private const string PythonVersion = "3.14.3";
+    private const string PythonBuildStandaloneTag = "20260325";
     private const string NextBotSourceZipUrl = "https://github.com/Arispex/next-bot/archive/refs/heads/main.zip";
     private const string NextBotExtractedFolderName = "next-bot-main";
     private const string NapCatShellZipUrl =
@@ -859,18 +860,13 @@ internal static class Program
 
     private static async Task<ArchivePlan> ResolveArchivePlanAsync(string pythonVersion)
     {
-        var releaseJson = await Http.GetStringAsync(ToProxiedGithubUrl(LatestReleaseMetadataUrl));
-        var metadata = ParseLatestReleaseMetadata(releaseJson);
+        var tag = PythonBuildStandaloneTag;
+        var assetUrlPrefix = $"https://github.com/astral-sh/python-build-standalone/releases/download/{tag}";
 
-        if (metadata is null || string.IsNullOrWhiteSpace(metadata.Tag) || string.IsNullOrWhiteSpace(metadata.AssetUrlPrefix))
-        {
-            throw new InvalidOperationException("无法解析 python-build-standalone 发布信息。");
-        }
-
-        var fileCandidates = BuildArchiveCandidates(pythonVersion, metadata.Tag).ToList();
+        var fileCandidates = BuildArchiveCandidates(pythonVersion, tag).ToList();
         foreach (var fileName in fileCandidates)
         {
-            var url = $"{metadata.AssetUrlPrefix}/{fileName}";
+            var url = $"{assetUrlPrefix}/{fileName}";
             if (await UrlExistsAsync(url))
             {
                 return new ArchivePlan(url, fileName);
@@ -878,7 +874,7 @@ internal static class Program
         }
 
         throw new InvalidOperationException(
-            "未找到当前系统可用的 Python 3.14.3 压缩包。请检查网络连接和代理设置后重试。"
+            $"未找到当前系统可用的 Python {pythonVersion} 压缩包。请检查网络连接和代理设置后重试。"
         );
     }
 
