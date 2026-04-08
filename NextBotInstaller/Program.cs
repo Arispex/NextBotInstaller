@@ -479,12 +479,7 @@ internal static class Program
         try
         {
             ZipFile.ExtractToDirectory(sourceZipPath, tempExtractRoot, true);
-            var extractedRoot = Path.Combine(tempExtractRoot, NextBotExtractedFolderName);
-
-            if (!Directory.Exists(extractedRoot))
-            {
-                throw new DirectoryNotFoundException($"未找到解压后的源码目录：{NextBotExtractedFolderName}");
-            }
+            var extractedRoot = ResolveExtractedSourceRoot(tempExtractRoot);
 
             MergeDirectoryIntoTarget(extractedRoot, workingDirectory);
         }
@@ -505,12 +500,7 @@ internal static class Program
         try
         {
             ZipFile.ExtractToDirectory(sourceZipPath, tempExtractRoot, true);
-            var extractedRoot = Path.Combine(tempExtractRoot, NextBotExtractedFolderName);
-
-            if (!Directory.Exists(extractedRoot))
-            {
-                throw new DirectoryNotFoundException($"未找到解压后的源码目录：{NextBotExtractedFolderName}");
-            }
+            var extractedRoot = ResolveExtractedSourceRoot(tempExtractRoot);
 
             CleanupWorkingDirectoryForUpdate(workingDirectory, cacheDirectory);
             MergeDirectoryIntoTarget(extractedRoot, workingDirectory);
@@ -556,6 +546,30 @@ internal static class Program
 
             File.Delete(filePath);
         }
+    }
+
+    private static string ResolveExtractedSourceRoot(string tempExtractRoot)
+    {
+        var preferred = Path.Combine(tempExtractRoot, NextBotExtractedFolderName);
+        if (Directory.Exists(preferred))
+        {
+            return preferred;
+        }
+
+        var subdirectories = Directory.GetDirectories(tempExtractRoot);
+        var hasFiles = Directory.GetFiles(tempExtractRoot).Length > 0;
+
+        if (subdirectories.Length == 1 && !hasFiles)
+        {
+            return subdirectories[0];
+        }
+
+        if (subdirectories.Length == 0 && !hasFiles)
+        {
+            throw new DirectoryNotFoundException("未找到解压后的源码目录：压缩包内容为空");
+        }
+
+        return tempExtractRoot;
     }
 
     private static void MergeDirectoryIntoTarget(string sourceDirectory, string targetDirectory)
