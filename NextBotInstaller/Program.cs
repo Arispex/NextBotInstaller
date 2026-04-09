@@ -1299,11 +1299,14 @@ internal static class Program
             _ => throw new NotSupportedException($"未知的 NapCat 安装方式：{installMode}")
         };
 
+        var launcherSubDir = Path.GetDirectoryName(launcherRelativePath) ?? string.Empty;
+        var launcherFileName = Path.GetFileName(launcherRelativePath);
+
         var script =
             "@echo off\r\n" +
             "setlocal\r\n" +
-            "cd /d \"%~dp0\"\r\n" +
-            $"call \"{launcherRelativePath}\"\r\n";
+            $"cd /d \"%~dp0{launcherSubDir}\"\r\n" +
+            $"call \"{launcherFileName}\"\r\n";
 
         File.WriteAllText(scriptPath, script, new UTF8Encoding(false));
         return scriptPath;
