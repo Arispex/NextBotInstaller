@@ -13,8 +13,10 @@ internal static class Program
 {
     private const string PythonVersion = "3.14.3";
     private const string PythonBuildStandaloneTag = "20260325";
-    private const string NextBotSourceZipUrl = "https://github.com/Arispex/next-bot/archive/refs/heads/main.zip";
-    private const string NextBotExtractedFolderName = "next-bot-main";
+    private const string NextBotSourceZipUrl = "https://github.com/Arispex/nextbot/archive/refs/heads/main.zip";
+    private const string NextBotLatestReleaseUrl =
+        "https://github.com/Arispex/nextbot/releases/latest";
+    private const string NextBotExtractedFolderName = "nextbot-main";
     private const string NapCatShellZipUrl =
         "https://github.com/NapNeko/NapCatQQ/releases/latest/download/NapCat.Shell.zip";
     private const string NapCatShellWindowsOneKeyZipUrl =
@@ -145,16 +147,25 @@ internal static class Program
         AnsiConsole.MarkupLine($"[grey]GitHub 代理：[/][white]{Markup.Escape(GetGithubProxyStatusText())}[/]");
         AnsiConsole.WriteLine();
 
+        var channel = PromptNextBotChannel("安装 NextBot");
+        if (channel is null)
+        {
+            AnsiConsole.MarkupLine("[yellow]已取消安装。[/]");
+            return;
+        }
+
         var workingDirectory = Directory.GetCurrentDirectory();
         var cacheDirectory = Path.Combine(workingDirectory, ".installer-cache");
         var installDirectory = Path.Combine(workingDirectory, "python");
 
         Directory.CreateDirectory(cacheDirectory);
 
-        var sourceZipPath = Path.Combine(cacheDirectory, "next-bot-main.zip");
+        var nextBotSource = await ResolveNextBotSourceAsync(channel.Value);
+
+        var sourceZipPath = Path.Combine(cacheDirectory, "nextbot-main.zip");
         await RunWithStatusAsync(
-            "步骤 1/8 下载 NextBot...",
-            () => DownloadFileAsync(NextBotSourceZipUrl, sourceZipPath));
+            $"步骤 1/8 下载 NextBot（{nextBotSource.VersionLabel}）...",
+            () => DownloadFileAsync(nextBotSource.ZipUrl, sourceZipPath));
 
         await RunWithStatusAsync(
             "步骤 2/8 解压并同步到当前目录...",
@@ -223,6 +234,7 @@ internal static class Program
         summaryGrid.AddColumn(new GridColumn().NoWrap());
         summaryGrid.AddColumn();
         summaryGrid.AddRow(new Markup("[grey]安装目录[/]"), new Markup($"[white]{Markup.Escape(workingDirectory)}[/]"));
+        summaryGrid.AddRow(new Markup("[grey]NextBot 版本[/]"), new Markup($"[white]{Markup.Escape(nextBotSource.VersionLabel)}[/]"));
         summaryGrid.AddRow(new Markup("[grey]Python 安装目录[/]"), new Markup($"[white]{Markup.Escape(installDirectory)}[/]"));
         summaryGrid.AddRow(new Markup("[grey]Python 版本[/]"), new Markup($"[white]{Markup.Escape(PythonVersion)}[/]"));
         summaryGrid.AddRow(new Markup("[grey]启动脚本[/]"),
@@ -245,6 +257,13 @@ internal static class Program
         AnsiConsole.MarkupLine($"[grey]GitHub 代理：[/][white]{Markup.Escape(GetGithubProxyStatusText())}[/]");
         AnsiConsole.WriteLine();
 
+        var channel = PromptNextBotChannel("更新 NextBot");
+        if (channel is null)
+        {
+            AnsiConsole.MarkupLine("[yellow]已取消更新。[/]");
+            return;
+        }
+
         var workingDirectory = Directory.GetCurrentDirectory();
         var cacheDirectory = Path.Combine(workingDirectory, ".installer-cache");
         var installDirectory = Path.Combine(workingDirectory, "python");
@@ -256,11 +275,13 @@ internal static class Program
         }
 
         var pythonExecutable = FindPythonExecutable(installDirectory);
-        var sourceZipPath = Path.Combine(cacheDirectory, "next-bot-main.zip");
+        var sourceZipPath = Path.Combine(cacheDirectory, "nextbot-main.zip");
+
+        var nextBotSource = await ResolveNextBotSourceAsync(channel.Value);
 
         await RunWithStatusAsync(
-            "步骤 1/5 下载 NextBot...",
-            () => DownloadFileAsync(NextBotSourceZipUrl, sourceZipPath));
+            $"步骤 1/5 下载 NextBot（{nextBotSource.VersionLabel}）...",
+            () => DownloadFileAsync(nextBotSource.ZipUrl, sourceZipPath));
 
         await RunWithStatusAsync(
             "步骤 2/5 清理旧文件并同步源码...",
@@ -301,6 +322,7 @@ internal static class Program
         summaryGrid.AddColumn(new GridColumn().NoWrap());
         summaryGrid.AddColumn();
         summaryGrid.AddRow(new Markup("[grey]更新目录[/]"), new Markup($"[white]{Markup.Escape(workingDirectory)}[/]"));
+        summaryGrid.AddRow(new Markup("[grey]NextBot 版本[/]"), new Markup($"[white]{Markup.Escape(nextBotSource.VersionLabel)}[/]"));
         summaryGrid.AddRow(new Markup("[grey]Python 目录[/]"), new Markup($"[white]{Markup.Escape(installDirectory)}[/]"));
 
         AnsiConsole.Write(
@@ -856,6 +878,98 @@ internal static class Program
         GithubProxy.Enabled = enabled;
         GithubProxy.BaseUrl = baseUrl;
         GithubProxy.Source = source;
+    }
+
+    private enum NextBotChannel
+    {
+        Stable,
+        Unstable
+    }
+
+    private static NextBotChannel? PromptNextBotChannel(string actionTitle)
+    {
+        const string stable = "1. 稳定版（最新 Release）";
+        const string unstable = "2. 不稳定版（main 最新提交）";
+        const string back = "0. 返回";
+
+        var selected = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title($"[bold #7dd3fc]{actionTitle}：请选择版本渠道[/]")
+                .HighlightStyle(new Style(foreground: Color.Black, background: Color.Aquamarine1, decoration: Decoration.Bold))
+                .PageSize(10)
+                .AddChoices(stable, unstable, back));
+
+        return selected switch
+        {
+            stable => NextBotChannel.Stable,
+            unstable => NextBotChannel.Unstable,
+            _ => null
+        };
+    }
+
+    private sealed record NextBotSource(string ZipUrl, string VersionLabel);
+
+    private static async Task<NextBotSource> ResolveNextBotSourceAsync(NextBotChannel channel)
+    {
+        if (channel == NextBotChannel.Unstable)
+        {
+            return new NextBotSource(NextBotSourceZipUrl, "main (latest commit)");
+        }
+
+        var tag = await ResolveLatestReleaseTagAsync();
+        if (string.IsNullOrWhiteSpace(tag))
+        {
+            throw new InvalidOperationException("无法解析 NextBot 最新 Release 信息，请稍后重试。");
+        }
+
+        var url = $"https://github.com/Arispex/nextbot/archive/refs/tags/{tag}.zip";
+        return new NextBotSource(url, tag);
+    }
+
+    private static async Task<string?> ResolveLatestReleaseTagAsync()
+    {
+        using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+        using var client = new HttpClient(handler);
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("NextBotInstaller", "1.0"));
+
+        var currentUrl = ToProxiedGithubUrl(NextBotLatestReleaseUrl);
+        const string marker = "/releases/tag/";
+
+        for (var hop = 0; hop < 5; hop++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Head, currentUrl);
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+            var location = response.Headers.Location?.ToString();
+            if (string.IsNullOrEmpty(location))
+            {
+                return null;
+            }
+
+            // Resolve relative redirects against the current URL
+            if (!Uri.IsWellFormedUriString(location, UriKind.Absolute))
+            {
+                var baseUri = new Uri(currentUrl);
+                location = new Uri(baseUri, location).ToString();
+            }
+
+            var idx = location.IndexOf(marker, StringComparison.Ordinal);
+            if (idx >= 0)
+            {
+                var tag = location[(idx + marker.Length)..].TrimEnd('/');
+                var queryIdx = tag.IndexOf('?');
+                if (queryIdx >= 0)
+                {
+                    tag = tag[..queryIdx];
+                }
+
+                return Uri.UnescapeDataString(tag);
+            }
+
+            currentUrl = location;
+        }
+
+        return null;
     }
 
     private static async Task<ArchivePlan> ResolveArchivePlanAsync(string pythonVersion)
