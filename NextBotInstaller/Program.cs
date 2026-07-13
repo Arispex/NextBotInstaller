@@ -31,8 +31,12 @@ internal static class Program
         "https://gh-proxy.org/",
         "https://hk.gh-proxy.org/",
         "https://cdn.gh-proxy.org/",
-        "https://edgeone.gh-proxy.org/"
+        "https://edgeone.gh-proxy.org/",
+        "https://gh-proxy.com/",
+        "https://cdn.gh-proxy.com/",
+        "https://github.dpik.top/"
     };
+    private static readonly TimeSpan GithubProxyProbeTimeout = TimeSpan.FromSeconds(5);
     private static readonly HashSet<string> NextBotUpdateProtectedDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
         "python",
@@ -120,6 +124,7 @@ internal static class Program
             "测试代理站可用性...",
             async () =>
             {
+                var candidates = new List<(int BuiltinIndex, string BaseUrl)>();
                 for (var i = 0; i < BuiltinGithubProxySites.Length; i++)
                 {
                     var rawSite = BuiltinGithubProxySites[i];
@@ -128,13 +133,22 @@ internal static class Program
                         continue;
                     }
 
-                    if (!await IsProxyAvailableAsync(normalized))
-                    {
-                        continue;
-                    }
+                    candidates.Add((i, normalized));
+                }
 
-                    ApplyProxyState(true, normalized, i == 0 ? "自动检测（默认）" : "自动检测");
-                    return;
+                var availability = await Task.WhenAll(
+                    candidates.Select(candidate => IsProxyAvailableAsync(candidate.BaseUrl)));
+                for (var i = 0; i < availability.Length; i++)
+                {
+                    if (availability[i])
+                    {
+                        var candidate = candidates[i];
+                        ApplyProxyState(
+                            true,
+                            candidate.BaseUrl,
+                            candidate.BuiltinIndex == 0 ? "自动检测（默认）" : "自动检测");
+                        return;
+                    }
                 }
 
                 ApplyProxyState(false, string.Empty, "自动检测");
@@ -1058,16 +1072,22 @@ internal static class Program
 
     private static async Task<bool> IsProxyAvailableAsync(string proxyBaseUrl)
     {
+        using var timeoutCts = new CancellationTokenSource(GithubProxyProbeTimeout);
         var probeUrl = $"{proxyBaseUrl}{LatestReleaseMetadataUrl}";
-        return await IsUrlReachableAsync(probeUrl);
+        return await IsUrlReachableAsync(probeUrl, timeoutCts.Token);
     }
 
-    private static async Task<bool> IsUrlReachableAsync(string requestUrl)
+    private static async Task<bool> IsUrlReachableAsync(
+        string requestUrl,
+        CancellationToken cancellationToken = default)
     {
         try
         {
             using var headRequest = new HttpRequestMessage(HttpMethod.Head, requestUrl);
-            using var headResponse = await Http.SendAsync(headRequest, HttpCompletionOption.ResponseHeadersRead);
+            using var headResponse = await Http.SendAsync(
+                headRequest,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
             if (headResponse.IsSuccessStatusCode)
             {
                 return true;
@@ -1080,6 +1100,11 @@ internal static class Program
         }
         catch
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return false;
+            }
+
             // ignore and fallback to ranged GET
         }
 
@@ -1087,7 +1112,10 @@ internal static class Program
         {
             using var getRequest = new HttpRequestMessage(HttpMethod.Get, requestUrl);
             getRequest.Headers.Range = new RangeHeaderValue(0, 0);
-            using var getResponse = await Http.SendAsync(getRequest, HttpCompletionOption.ResponseHeadersRead);
+            using var getResponse = await Http.SendAsync(
+                getRequest,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
             return getResponse.IsSuccessStatusCode || getResponse.StatusCode == HttpStatusCode.PartialContent;
         }
         catch
