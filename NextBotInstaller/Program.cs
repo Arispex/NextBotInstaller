@@ -37,6 +37,8 @@ internal static class Program
         "https://github.dpik.top/"
     };
     private static readonly TimeSpan GithubProxyProbeTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan HttpResponseHeadersTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan FileDownloadTimeout = TimeSpan.FromMinutes(30);
     private static readonly HashSet<string> NextBotUpdateProtectedDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
         "python",
@@ -1127,12 +1129,38 @@ internal static class Program
     private static async Task DownloadFileAsync(string url, string outputPath)
     {
         var requestUrl = ToProxiedGithubUrl(url);
-        using var response = await Http.GetAsync(requestUrl, HttpCompletionOption.ResponseHeadersRead);
-        response.EnsureSuccessStatusCode();
+        var temporaryOutputPath = $"{outputPath}.part";
+        DeleteFileIfExists(temporaryOutputPath);
+        using var timeoutCts = new CancellationTokenSource(FileDownloadTimeout);
 
-        await using var outputStream = File.Create(outputPath);
-        await using var networkStream = await response.Content.ReadAsStreamAsync();
-        await networkStream.CopyToAsync(outputStream);
+        try
+        {
+            using var response = await Http.GetAsync(
+                requestUrl,
+                HttpCompletionOption.ResponseHeadersRead,
+                timeoutCts.Token);
+            response.EnsureSuccessStatusCode();
+
+            await using (var outputStream = File.Create(temporaryOutputPath))
+            {
+                await using var networkStream = await response.Content.ReadAsStreamAsync(timeoutCts.Token);
+                await networkStream.CopyToAsync(outputStream, timeoutCts.Token);
+            }
+
+            File.Move(temporaryOutputPath, outputPath, true);
+        }
+        catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested)
+        {
+            DeleteFileIfExists(temporaryOutputPath);
+            throw new TimeoutException(
+                $"文件下载超过 {FileDownloadTimeout.TotalMinutes:0} 分钟，已取消。",
+                ex);
+        }
+        catch
+        {
+            DeleteFileIfExists(temporaryOutputPath);
+            throw;
+        }
     }
 
     private static void DeleteFileIfExists(string path)
@@ -1510,7 +1538,7 @@ internal static class Program
     {
         var client = new HttpClient
         {
-            Timeout = TimeSpan.FromMinutes(30)
+            Timeout = HttpResponseHeadersTimeout
         };
         client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("NextBotInstaller", "1.0"));
         return client;
